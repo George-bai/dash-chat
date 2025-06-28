@@ -17,7 +17,7 @@
 
 import React, { useState, useRef } from "react";
 import PropTypes from "prop-types";
-import { Paperclip, Send, X, FileText } from "lucide-react";
+import { Paperclip, Send, X, FileText, Square } from "lucide-react";
 
 /**
  * A reusable message input component for chat interfaces.
@@ -28,6 +28,8 @@ const MessageInput = ({
     handleInputChange,
     value,
     setAttachment,
+    onStop,
+    isStreaming = false,
     placeholder = "Start typing...",
     buttonLabel,
     customStyles = null,
@@ -110,9 +112,10 @@ const MessageInput = ({
             />
             <div className="input-with-icons">
                 <button
-                    className="file-upload-button"
+                    className={`file-upload-button ${isStreaming ? 'disabled' : ''}`}
                     onClick={() => fileInputRef.current.click()}
                     data-testid="file-upload-button"
+                    disabled={isStreaming}
                 >
                     <Paperclip size={20} />
                 </button>
@@ -125,12 +128,16 @@ const MessageInput = ({
                     data-testid="file-input"
                 />
                 <button
-                    onClick={handleSend}
-                    className={`message-input-button ${showTyping ? 'disabled' : ''}`}
+                    onClick={isStreaming ? onStop : handleSend}
+                    className={`message-input-button ${(showTyping || (!value?.trim() && !isStreaming)) ? 'disabled' : ''}`}
                     data-testid="send-button"
-                    disabled={showTyping}
+                    disabled={showTyping || (!value?.trim() && !isStreaming)}
                 >
-                    {buttonLabel ? buttonLabel : <Send size={18} />}
+                    {isStreaming ? (
+                        <Square size={18} />
+                    ) : (
+                        buttonLabel ? buttonLabel : <Send size={18} />
+                    )}
                 </button>
             </div>
         </div>
@@ -150,6 +157,14 @@ MessageInput.propTypes = {
      * The current value of the input field.
     */
     value: PropTypes.string,
+    /**
+     * Callback to stop streaming. Triggered when stop button is clicked.
+    */
+    onStop: PropTypes.func,
+    /**
+     * Whether a response is currently streaming.
+    */
+    isStreaming: PropTypes.bool,
     /**
      * Placeholder text for the input field. Default is `"Start typing..."`.
     */

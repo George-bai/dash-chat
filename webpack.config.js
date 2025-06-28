@@ -1,6 +1,7 @@
 const path = require('path');
 const webpack = require('webpack');
 const WebpackDashDynamicImport = require('@plotly/webpack-dash-dynamic-import');
+const TerserPlugin = require('terser-webpack-plugin');
 const packagejson = require('./package.json');
 
 const dashLibraryName = packagejson.name.replace(/-/g, '_');
@@ -41,6 +42,7 @@ module.exports = (env, argv) => {
         'react-dom': 'ReactDOM',
         'plotly.js': 'Plotly',
         'prop-types': 'PropTypes',
+        'react-plotly.js': 'ReactPlotly',
     });
 
     return {
@@ -70,11 +72,14 @@ module.exports = (env, argv) => {
             maxEntrypointSize: 1024 * 1024,   // 1 MiB for entrypoints
             hints: false,                     // Disable performance hints
         },
+        experiments: {
+            cacheUnaffected: true,
+        },
         module: {
             rules: [
                 {
                     test: /\.jsx?$/,
-                    exclude: /node_modules/,
+                    include: path.resolve(__dirname, 'src'),
                     use: [
                         {
                             // Speed up babel compilation by running in a worker pool
@@ -132,7 +137,9 @@ module.exports = (env, argv) => {
             new webpack.SourceMapDevToolPlugin({
                 filename: '[file].map',
                 exclude: ['async-plotlyjs']
-            })
+            }),
+            // Exclude all Moment.js locales to reduce bundle size & compile time
+            new webpack.IgnorePlugin({ resourceRegExp: /^\.\/locale$/, contextRegExp: /moment$/ })
         ]
     }
 };

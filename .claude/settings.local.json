@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python test_parsing_only.py:*)",
+      "Bash(python3:*)",
+      "Bash(pip install:*)",
+      "Bash(pip3 install:*)",
+      "Bash(venv/Scripts/activate:*)",
+      "Bash(./venv/Scripts/pip.exe install -r requirements_sse.txt)",
+      "Bash(./venv/Scripts/python.exe -c \"import dash_chat; print('dash_chat imported successfully')\")",
+      "Bash(./venv/Scripts/python.exe simple_sse_example.py:*)",
+      "Bash(./venv/Scripts/python.exe test_sse_implementation.py:*)",
+      "Bash(./venv/Scripts/python.exe test_sse_windows.py:*)",
+      "Bash(curl:*)",
+      "Bash(npm run build:*)",
+      "WebFetch(domain:python.langchain.com)"
+    ],
+    "deny": []
+  }
+}

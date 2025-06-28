@@ -214,3 +214,172 @@
 .markdown-content tr:hover {
     background-color: #ddd;
 }
+
+/* Thinking section container */
+.thinking-section {
+    margin-bottom: 12px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    background-color: rgba(0, 0, 0, 0.02);
+    overflow: hidden;
+}
+
+.thinking-section.streaming {
+    border-color: rgba(59, 130, 246, 0.3);
+    background-color: rgba(59, 130, 246, 0.05);
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.8; }
+}
+
+/* Thinking toggle button */
+.thinking-toggle {
+    width: 100%;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    color: #64748b;
+    transition: all 0.2s;
+    text-align: left;
+}
+
+.thinking-toggle:hover:not(:disabled) {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.thinking-toggle:disabled {
+    cursor: default;
+}
+
+.thinking-chevron {
+    font-size: 12px;
+    transition: transform 0.2s;
+}
+
+.thinking-label {
+    flex: 1;
+    font-weight: 500;
+}
+
+.thinking-section.streaming .thinking-label {
+    color: #3b82f6;
+}
+
+.thinking-stats {
+    font-size: 12px;
+    color: #94a3b8;
+    margin-left: auto;
+}
+
+/* Thinking content */
+.thinking-content-wrapper {
+    transition: height 0.3s ease-in-out, opacity 0.3s ease-in-out;
+}
+
+.thinking-content {
+    padding: 12px 14px;
+    font-size: 14px;
+    color: #475569;
+    line-height: 1.6;
+}
+
+.thinking-content .typing-dots {
+    margin-bottom: 8px;
+}
+
+/* Dark theme support */
+.chat-container[data-theme="dark"] .thinking-section {
+    border-color: rgba(255, 255, 255, 0.1);
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+.chat-container[data-theme="dark"] .thinking-section.streaming {
+    border-color: rgba(59, 130, 246, 0.4);
+    background-color: rgba(59, 130, 246, 0.1);
+}
+
+.chat-container[data-theme="dark"] .thinking-toggle {
+    color: #94a3b8;
+}
+
+.chat-container[data-theme="dark"] .thinking-toggle:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.chat-container[data-theme="dark"] .thinking-content {
+    color: #cbd5e1;
+}
+
+/* Typewriter cursor animation */
+.typewriter-cursor {
+    display: inline-block;
+    animation: blink 1s infinite;
+    margin-left: 2px;
+    font-weight: normal;
+    color: #3b82f6;
+}
+
+@keyframes blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+}
+
+/* Ensure thinking content is visible during typewriter */
+.thinking-content {
+    min-height: 20px;
+}
+
+/* Message timestamp styling */
+.message-timestamp {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    font-size: 12px;
+    color: #666;
+}
+
+.message-sender {
+    font-weight: 600;
+    color: #333;
+}
+
+.message-time {
+    font-style: italic;
+    color: #888;
+}
+
+/* Dark theme timestamp support */
+.chat-container[data-theme="dark"] .message-timestamp {
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+    color: #999;
+}
+
+.chat-container[data-theme="dark"] .message-sender {
+    color: #ddd;
+}
+
+.chat-container[data-theme="dark"] .message-time {
+    color: #aaa;
+}
+
+/* Disabled button styles */
+.file-upload-button.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.message-input-button.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

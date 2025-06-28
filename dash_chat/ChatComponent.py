@@ -80,7 +80,28 @@ class ChatComponent(Component):
         spinner animation.
 
     - user_bubble_style (dict; optional):
-        Css styles to customize the user message bubble."""
+        Css styles to customize the user message bubble.
+
+    - streaming_enabled (boolean; default False):
+        Enable SSE streaming functionality.
+
+    - sse_endpoint (string; optional):
+        SSE endpoint URL for streaming messages.
+
+    - show_thinking_process (boolean; default True):
+        Show thinking process sections.
+
+    - thinking_auto_collapse (boolean; default True):
+        Auto-collapse thinking sections when complete.
+
+    - thinking_collapse_delay (number; default 300):
+        Delay before auto-collapsing thinking sections (ms).
+
+    - typewriter_speed (number; default 30):
+        Speed of typewriter effect for thinking content (ms per character).
+
+    - streaming_complete (string; optional):
+        Fired when streaming completes for a message."""
 
     _children_props = []
     _base_nodes = ["children"]
@@ -107,6 +128,13 @@ class ChatComponent(Component):
         persistence=Component.UNDEFINED,
         persistence_type=Component.UNDEFINED,
         supported_input_file_types=Component.UNDEFINED,
+        streaming_enabled=Component.UNDEFINED,
+        sse_endpoint=Component.UNDEFINED,
+        show_thinking_process=Component.UNDEFINED,
+        thinking_auto_collapse=Component.UNDEFINED,
+        thinking_collapse_delay=Component.UNDEFINED,
+        typewriter_speed=Component.UNDEFINED,
+        streaming_complete=Component.UNDEFINED,
         **kwargs
     ):
         self._prop_names = [
@@ -127,6 +155,13 @@ class ChatComponent(Component):
             "theme",
             "typing_indicator",
             "user_bubble_style",
+            "streaming_enabled",
+            "sse_endpoint",
+            "show_thinking_process",
+            "thinking_auto_collapse",
+            "thinking_collapse_delay",
+            "typewriter_speed",
+            "streaming_complete",
         ]
         self._valid_wildcard_attributes = []
         self.available_properties = [
@@ -147,6 +182,13 @@ class ChatComponent(Component):
             "theme",
             "typing_indicator",
             "user_bubble_style",
+            "streaming_enabled",
+            "sse_endpoint",
+            "show_thinking_process",
+            "thinking_auto_collapse",
+            "thinking_collapse_delay",
+            "typewriter_speed",
+            "streaming_complete",
         ]
         self.available_wildcard_properties = []
         _explicit_args = kwargs.pop("_explicit_args")
