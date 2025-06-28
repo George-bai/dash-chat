@@ -60,14 +60,36 @@ module.exports = (env, argv) => {
             }
         },
         externals,
+        cache: {
+            // Use filesystem caching to speed up repeated builds
+            type: 'filesystem',
+        },
+        performance: {
+            // Increase asset size limits to avoid performance warnings during build
+            maxAssetSize: 1024 * 1024,        // 1 MiB per asset
+            maxEntrypointSize: 1024 * 1024,   // 1 MiB for entrypoints
+            hints: false,                     // Disable performance hints
+        },
         module: {
             rules: [
                 {
                     test: /\.jsx?$/,
                     exclude: /node_modules/,
-                    use: {
-                        loader: 'babel-loader',
-                    },
+                    use: [
+                        {
+                            // Speed up babel compilation by running in a worker pool
+                            loader: 'thread-loader',
+                            options: {
+                                workers: 2,
+                            },
+                        },
+                        {
+                            loader: 'babel-loader',
+                            options: {
+                                cacheDirectory: true,
+                            },
+                        },
+                    ],
                 },
                 {
                     test: /\.css$/,
@@ -77,6 +99,9 @@ module.exports = (env, argv) => {
                         },
                         {
                             loader: 'css-loader',
+                            options: {
+                                importLoaders: 1,
+                            }
                         },
                     ],
                 },
