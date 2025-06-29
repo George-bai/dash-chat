@@ -3,7 +3,7 @@ import uuid
 import time
 import threading
 import queue
-from typing import Generator, Dict, Any, Optional
+from typing import Generator, Dict, Any
 from flask import Response, stream_with_context
 
 try:
@@ -66,7 +66,6 @@ class LangChainSSEHandler:
                 
             def on_llm_new_token(self, token: str, **kwargs) -> None:
                 """Process each new token from the LLM."""
-                print(f"[SSE] New token received - length: {len(token)}, preview: {repr(token[:50])}")
                 self.full_content += token
                 self.buffer += token
                 
@@ -76,8 +75,8 @@ class LangChainSSEHandler:
                     self.last_send_time = 0
                 
                 current_time = time.time()
-                # Rate limit: minimum 20ms between sends for smooth animation
-                if current_time - self.last_send_time >= 0.02:
+                # Rate limit: minimum 10ms between sends for faster response
+                if current_time - self.last_send_time >= 0.01:
                     self._process_buffer()
                     self.last_send_time = current_time
                 else:
@@ -132,8 +131,7 @@ class LangChainSSEHandler:
                     else:
                         # No complete tags found - send content chunks
                         # Send smaller chunks for better typewriter effect
-                        if len(self.buffer) >= 3:  # Send every 3 characters for smooth streaming
-                            print(f"[SSE] Sending small content chunk - length: {len(self.buffer)}, in_thinking: {self.in_thinking}")
+                        if len(self.buffer) >= 1:  # Send every 1-2 characters for very smooth streaming
                             self.event_queue.put({
                                 'type': 'content',
                                 'message_id': self.message_id,
@@ -198,7 +196,6 @@ class LangChainSSEHandler:
                         config = RunnableConfig(callbacks=[callback])
                         llm.invoke(prompt, config=config)
                     except Exception as e:
-                        print(f"LLM error: {e}")
                         event_queue.put({
                             'type': 'error',
                             'message_id': message_id,
@@ -234,7 +231,6 @@ class LangChainSSEHandler:
                 yield '\n'
                 
             except Exception as e:
-                print(f"Error in SSE generator: {e}")
                 error_event = {
                     'type': 'error',
                     'message_id': message_id,

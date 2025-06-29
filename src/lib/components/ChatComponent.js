@@ -18,6 +18,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { EllipsisVertical } from "lucide-react";
 import PropTypes from "prop-types";
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 import MessageInput from "../../private/ChatMessageInput";
 import renderMessageContent from "../../private/renderers";
@@ -26,11 +27,18 @@ import TypingIndicatorSpinner from "../../private/SpinnerIndicator";
 
 import "../../styles/chatStyles.css";
 
-// Helper function to format timestamp
+// Helper function to format timestamp with full date
 const formatTimestamp = (timestamp) => {
     if (!timestamp) return '';
     const date = new Date(timestamp);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return date.toLocaleString([], { 
+        year: 'numeric',
+        month: '2-digit', 
+        day: '2-digit',
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit' 
+    });
 };
 
 // Timestamp component
@@ -47,58 +55,6 @@ const MessageTimestamp = ({ message, isStreaming }) => {
     );
 };
 
-// Typewriter effect hook
-const useTypewriter = (text, speed = 30, enabled = true) => {
-    const [displayText, setDisplayText] = useState('');
-    const [isTyping, setIsTyping] = useState(false);
-    const indexRef = useRef(0);
-    const rafRef = useRef(null);
-    const lastTimeRef = useRef(0);
-    
-    useEffect(() => {
-        if (!enabled || !text) {
-            setDisplayText(text);
-            setIsTyping(false);
-            return;
-        }
-        
-        // Reset if text is shorter than current display
-        if (text.length < displayText.length) {
-            indexRef.current = 0;
-            setDisplayText('');
-        }
-        
-        // Start typing animation
-        setIsTyping(true);
-        
-        const typeText = (timestamp) => {
-            if (timestamp - lastTimeRef.current >= speed) {
-                if (indexRef.current < text.length) {
-                    const newText = text.slice(0, indexRef.current + 1);
-                    setDisplayText(newText);
-                    indexRef.current++;
-                    lastTimeRef.current = timestamp;
-                }
-            }
-            
-            if (indexRef.current < text.length) {
-                rafRef.current = requestAnimationFrame(typeText);
-            } else {
-                setIsTyping(false);
-            }
-        };
-        
-        rafRef.current = requestAnimationFrame(typeText);
-        
-        return () => {
-            if (rafRef.current) {
-                cancelAnimationFrame(rafRef.current);
-            }
-        };
-    }, [text, speed, enabled]);
-    
-    return { displayText, isTyping };
-};
 
 // Parse thinking tags from streaming content
 const parseThinkingContent = (content) => {
@@ -149,22 +105,13 @@ const parseThinkingContent = (content) => {
     };
 };
 
-// Thinking section component with typewriter effect
-const ThinkingSection = ({ thinking, isExpanded, onToggle, isStreaming, typewriterSpeed = 30 }) => {
+// Thinking section component
+const ThinkingSection = ({ thinking, isExpanded, onToggle, isStreaming }) => {
     const contentRef = useRef(null);
     const [height, setHeight] = useState(0);
     
-    // Use typewriter effect when streaming and thinking is not complete
-    const shouldUseTypewriter = isStreaming && !thinking.isComplete && isExpanded;
-    
-    const { displayText, isTyping } = useTypewriter(
-        thinking.content, 
-        typewriterSpeed, 
-        shouldUseTypewriter
-    );
-    
-    // Use typewriter text when streaming, full text when complete
-    const contentToShow = isStreaming ? displayText : thinking.content;
+    // Always show the full content
+    const contentToShow = thinking.content;
     
     useEffect(() => {
         if (contentRef.current) {
@@ -197,8 +144,7 @@ const ThinkingSection = ({ thinking, isExpanded, onToggle, isStreaming, typewrit
                 }}
             >
                 <div ref={contentRef} className="thinking-content">
-                    <ReactMarkdown>{contentToShow}</ReactMarkdown>
-                    {isTyping && <span className="typewriter-cursor">▊</span>}
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{contentToShow}</ReactMarkdown>
                 </div>
             </div>
         </div>
@@ -212,8 +158,7 @@ const StreamingMessage = ({
     bubbleStyle, 
     showThinkingProcess, 
     thinkingAutoCollapse, 
-    thinkingCollapseDelay, 
-    typewriterSpeed 
+    thinkingCollapseDelay
 }) => {
     const [expandedThinking, setExpandedThinking] = useState({});
     const parseStateRef = useRef({ inThinking: false });
@@ -245,7 +190,6 @@ const StreamingMessage = ({
     // Auto-expand thinking sections while streaming
     useEffect(() => {
         if (isStreaming && thinkingSections.length > 0) {
-            console.log('[StreamingMessage] Auto-expanding thinking sections');
             const newExpanded = {};
             thinkingSections.forEach(thinking => {
                 newExpanded[thinking.id] = true;
@@ -295,24 +239,20 @@ const StreamingMessage = ({
                     isExpanded={expandedThinking[thinking.id]}
                     onToggle={() => toggleThinking(thinking.id)}
                     isStreaming={!thinking.isComplete}
-                    typewriterSpeed={typewriterSpeed}
                 />
             ))}
             {mainContent && (
                 <div className="markdown-content">
-                    <ReactMarkdown>{mainContent}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{mainContent}</ReactMarkdown>
                 </div>
-            )}
-            {isStreaming && !parseStateRef.current.inThinking && !mainContent && (
-                <TypingIndicatorDots />
             )}
         </div>
     );
 };
 
 const defaultUserBubbleStyle = {
-    backgroundColor: "#007bff",
-    color: "white",
+    backgroundColor: "#e2e8f0",
+    color: "#1a202c",
     marginLeft: "auto",
     textAlign: "right",
 };
@@ -363,7 +303,6 @@ const ChatComponent = ({
     show_thinking_process: showThinkingProcess = true,
     thinking_auto_collapse: thinkingAutoCollapse = true,
     thinking_collapse_delay: thinkingCollapseDelay = 300,
-    typewriter_speed: typewriterSpeed = 30,
 }) => {
     const userBubbleStyle = { ...defaultUserBubbleStyle, ...userBubbleStyleProp };
     const assistantBubbleStyle = { ...defaultAssistantBubbleStyle, ...assistantBubbleStyleProp };
@@ -374,6 +313,7 @@ const ChatComponent = ({
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const messageEndRef = useRef(null);
     const dropdownRef = useRef(null);
+    const chatMessagesRef = useRef(null);
     
     // New SSE state
     const [streamingMessages, setStreamingMessages] = useState({});
@@ -382,10 +322,9 @@ const ChatComponent = ({
     const sseRef = useRef(null);
     const reconnectTimeoutRef = useRef(null);
     
-    // Debug: Track isStreaming changes
-    useEffect(() => {
-        console.log('isStreaming state changed to:', isStreaming);
-    }, [isStreaming]);
+    // Simple scrolling state
+    const scrollTimeoutRef = useRef(null);
+    
 
     let storeType;
     if (persistenceType === "local") {
@@ -440,11 +379,52 @@ const ChatComponent = ({
         }
     }, [messages]);
 
+    // Simple auto-scrolling: always scroll to bottom for new messages
     useEffect(() => {
         if (messageEndRef.current) {
             messageEndRef.current.scrollIntoView({ behavior: "smooth" });
         }
     }, [localMessages]);
+    
+    // Always scroll to bottom when streaming (LLM is responding)
+    useEffect(() => {
+        if (isStreaming && messageEndRef.current) {
+            // Scroll immediately during streaming
+            messageEndRef.current.scrollIntoView({ behavior: "smooth" });
+        }
+    }, [streamingMessages, isStreaming]);
+    
+    // Additional scroll trigger for streaming content changes
+    useEffect(() => {
+        if (isStreaming) {
+            // Create a more aggressive scroll trigger during streaming
+            const streamingContent = Object.values(streamingMessages)
+                .map(msg => (msg.streamingContent || '') + (msg.streamingThinkingContent || '') + (msg.streamingMainContent || ''))
+                .join('');
+            
+            if (streamingContent && messageEndRef.current) {
+                // Use requestAnimationFrame for smooth scrolling during rapid updates
+                requestAnimationFrame(() => {
+                    if (messageEndRef.current) {
+                        messageEndRef.current.scrollIntoView({ behavior: "smooth" });
+                    }
+                });
+            }
+        }
+    }, [Object.values(streamingMessages).map(msg => 
+        (msg?.streamingContent || '') + 
+        (msg?.streamingThinkingContent || '') + 
+        (msg?.streamingMainContent || '')
+    ).join(''), isStreaming]);
+    
+    // Cleanup scroll timeout
+    useEffect(() => {
+        return () => {
+            if (scrollTimeoutRef.current) {
+                clearTimeout(scrollTimeoutRef.current);
+            }
+        };
+    }, []);
 
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -475,10 +455,7 @@ const ChatComponent = ({
                 const messageId = urlParams.get('message_id');
                 
                 if (prompt && prompt.trim() !== '' && messageId) {
-                    console.log('Creating new SSE connection for message:', messageId);
                     connectSSE();
-                } else {
-                    console.log('Skipping SSE connection - invalid prompt or message_id');
                 }
             }
         }
@@ -520,18 +497,14 @@ const ChatComponent = ({
             
             // If we received a stream_complete event, this is normal closure
             if (connectionClosed) {
-                console.log('SSE connection closed normally after completion');
                 eventSource.close();
                 return;
             }
             
             // Only handle as error if connection is actually broken (not normal completion)
             if (eventSource.readyState === EventSource.CLOSED) {
-                console.log('SSE connection closed (may be normal)');
                 return;
             }
-            
-            console.log('Actual SSE connection error detected');
             setConnectionError('Connection lost. Please try again.');
             
             if (sseRef.current) {
@@ -546,7 +519,6 @@ const ChatComponent = ({
                 );
                 
                 if (incompleteMessages.length > 0) {
-                    console.log('Replacing incomplete streaming messages with error:', incompleteMessages);
                     incompleteMessages.forEach(messageId => {
                         const errorMessage = {
                             ...prev[messageId],
@@ -559,14 +531,13 @@ const ChatComponent = ({
                     setIsStreaming(false);
                     return {};
                 } else {
-                    console.log('No incomplete messages to replace');
                     return prev;
                 }
             });
         };
         
         eventSource.onopen = () => {
-            console.log('SSE connection opened');
+            // Connection opened
         };
         
         sseRef.current = eventSource;
@@ -574,7 +545,6 @@ const ChatComponent = ({
     
     // Handle SSE messages
     const handleSSEMessage = useCallback((data) => {
-        console.log('SSE message received:', data.type, data.message_id);
         switch (data.type) {
             case 'stream_start':
                 setStreamingMessages(prev => ({
@@ -592,15 +562,15 @@ const ChatComponent = ({
                     }
                 }));
                 setIsStreaming(true);
-                setShowTyping(false);
+                // Don't hide typing indicator yet - wait for first content
                 break;
                 
             case 'content':
-                console.log('[SSE content] Chunk received - length:', data.chunk?.length || 0, 'preview:', data.chunk?.substring(0, 50));
+                // Hide typing indicator when first content arrives
+                setShowTyping(false);
                 setStreamingMessages(prev => {
                     const existingMessage = prev[data.message_id];
                     if (!existingMessage) {
-                        console.log('[SSE content] Creating new message for chunk');
                         // Create message if it doesn't exist yet
                         return {
                             ...prev,
@@ -619,7 +589,6 @@ const ChatComponent = ({
                     
                     const chunk = data.chunk || '';
                     const inThinking = existingMessage.inThinkingMode;
-                    console.log('[SSE content] Routing chunk to:', inThinking ? 'thinking' : 'main', 'content');
                     
                     return {
                         ...prev,
@@ -638,7 +607,6 @@ const ChatComponent = ({
                 break;
                 
             case 'thinking_start':
-                console.log('[SSE thinking_start] Entering thinking mode for message:', data.message_id);
                 setStreamingMessages(prev => ({
                     ...prev,
                     [data.message_id]: {
@@ -649,7 +617,6 @@ const ChatComponent = ({
                 break;
                 
             case 'thinking_end':
-                console.log('[SSE thinking_end] Exiting thinking mode for message:', data.message_id);
                 setStreamingMessages(prev => ({
                     ...prev,
                     [data.message_id]: {
@@ -660,7 +627,6 @@ const ChatComponent = ({
                 break;
                 
             case 'stream_complete':
-                console.log('Stream complete received for message:', data.message_id);
                 // Use functional updates to avoid stale closure issues
                 setStreamingMessages(prev => {
                     const streamingMessage = prev[data.message_id];
@@ -674,15 +640,11 @@ const ChatComponent = ({
                             completedAt: Date.now()
                         };
                         
-                        console.log('Moving message to completed:', completedMessage.id, 'isStreaming:', completedMessage.isStreaming);
-                        
                         // Move to local messages
                         setLocalMessages(prevLocal => [...prevLocal, completedMessage]);
                         
-                        // Log the state for debugging
                         const newStreaming = { ...prev };
                         delete newStreaming[data.message_id];
-                        console.log('Streaming messages after removal:', Object.keys(newStreaming));
                         
                         return newStreaming;
                     }
@@ -690,7 +652,6 @@ const ChatComponent = ({
                 });
                 
                 // Always set streaming to false when we receive stream_complete for any message
-                console.log('Setting isStreaming to false due to stream_complete');
                 setIsStreaming(false);
                 
                 // Close the SSE connection since the stream is complete
@@ -771,10 +732,8 @@ const ChatComponent = ({
                 setProps({ new_message: newMessage });
             }
 
-            // Only show typing indicator if not using SSE streaming
-            if (!streamingEnabled) {
-                setShowTyping(true);
-            }
+            // Show typing indicator until LLM response starts
+            setShowTyping(true);
             setCurrentMessage("");
             setAttachment("");
         }
@@ -869,7 +828,6 @@ const ChatComponent = ({
                         showThinkingProcess={showThinkingProcess}
                         thinkingAutoCollapse={thinkingAutoCollapse}
                         thinkingCollapseDelay={thinkingCollapseDelay}
-                        typewriterSpeed={typewriterSpeed}
                     />
                 );
             }
@@ -904,7 +862,7 @@ const ChatComponent = ({
                     </div>
                 </div>
             )}
-            <div className="chat-messages">
+            <div className="chat-messages" ref={chatMessagesRef}>
                 {localMessages.length === 0 && Object.keys(streamingMessages).length === 0 ? (
                     <div className="empty-chat">No conversation yet.</div>
                 ) : (
@@ -1062,10 +1020,6 @@ ChatComponent.propTypes = {
      */
     thinking_collapse_delay: PropTypes.number,
     
-    /**
-     * Speed of typewriter effect for thinking content (ms per character)
-     */
-    typewriter_speed: PropTypes.number,
     
     /**
      * Fired when streaming completes for a message

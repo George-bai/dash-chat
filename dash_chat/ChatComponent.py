@@ -97,7 +97,7 @@ class ChatComponent(Component):
     - thinking_collapse_delay (number; default 300):
         Delay before auto-collapsing thinking sections (ms).
 
-    - typewriter_speed (number; default 30):
+    - typewriter_speed (number; default 10):
         Speed of typewriter effect for thinking content (ms per character).
 
     - streaming_complete (string; optional):

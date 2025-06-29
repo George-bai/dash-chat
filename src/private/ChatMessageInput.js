@@ -103,8 +103,14 @@ const MessageInput = ({
                 onChange={handleInputChange}
                 onKeyDown={(e) => {
                     if (e.key === "Enter" && !showTyping) {
-                        e.preventDefault();
-                        handleSend();
+                        if (e.shiftKey) {
+                            // Shift+Enter: Allow default behavior (new line)
+                            return;
+                        } else {
+                            // Enter: Send message
+                            e.preventDefault();
+                            handleSend();
+                        }
                     }
                 }}
                 style={inputComponentStyles}
