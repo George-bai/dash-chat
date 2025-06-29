@@ -318,18 +318,16 @@ const ChatComponent = ({
     // New SSE state
     const [streamingMessages, setStreamingMessages] = useState({});
     const [isStreaming, setIsStreaming] = useState(false);
-    const [connectionError, setConnectionError] = useState(null);
     const sseRef = useRef(null);
     const reconnectTimeoutRef = useRef(null);
     
     // Simple scrolling state
     const scrollTimeoutRef = useRef(null);
-    
 
     let storeType;
     if (persistenceType === "local") {
         storeType = "localStorage";
-    } else if (persistenceType === "local") {
+    } else if (persistenceType === "session") {
         storeType = "sessionStorage";
     }
 
@@ -395,27 +393,24 @@ const ChatComponent = ({
     }, [streamingMessages, isStreaming]);
     
     // Additional scroll trigger for streaming content changes
+    const streamingContentLength = React.useMemo(() => {
+        return Object.values(streamingMessages)
+            .map(msg => (msg?.streamingContent || '').length + 
+                       (msg?.streamingThinkingContent || '').length + 
+                       (msg?.streamingMainContent || '').length)
+            .reduce((sum, length) => sum + length, 0);
+    }, [streamingMessages]);
+    
     useEffect(() => {
-        if (isStreaming) {
-            // Create a more aggressive scroll trigger during streaming
-            const streamingContent = Object.values(streamingMessages)
-                .map(msg => (msg.streamingContent || '') + (msg.streamingThinkingContent || '') + (msg.streamingMainContent || ''))
-                .join('');
-            
-            if (streamingContent && messageEndRef.current) {
-                // Use requestAnimationFrame for smooth scrolling during rapid updates
-                requestAnimationFrame(() => {
-                    if (messageEndRef.current) {
-                        messageEndRef.current.scrollIntoView({ behavior: "smooth" });
-                    }
-                });
-            }
+        if (isStreaming && streamingContentLength > 0 && messageEndRef.current) {
+            // Use requestAnimationFrame for smooth scrolling during rapid updates
+            requestAnimationFrame(() => {
+                if (messageEndRef.current) {
+                    messageEndRef.current.scrollIntoView({ behavior: "smooth" });
+                }
+            });
         }
-    }, [Object.values(streamingMessages).map(msg => 
-        (msg?.streamingContent || '') + 
-        (msg?.streamingThinkingContent || '') + 
-        (msg?.streamingMainContent || '')
-    ).join(''), isStreaming]);
+    }, [streamingContentLength, isStreaming]);
     
     // Cleanup scroll timeout
     useEffect(() => {
@@ -768,7 +763,6 @@ const ChatComponent = ({
         });
         
         setIsStreaming(false);
-        setConnectionError(null);
     };
 
     const styleChatContainer = {};
@@ -1019,7 +1013,6 @@ ChatComponent.propTypes = {
      * Delay before auto-collapsing thinking sections (ms)
      */
     thinking_collapse_delay: PropTypes.number,
-    
     
     /**
      * Fired when streaming completes for a message

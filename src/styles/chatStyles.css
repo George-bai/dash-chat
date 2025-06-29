@@ -142,6 +142,26 @@
     border-radius: 4px;
 }
 
+.markdown-content pre {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    padding: 12px;
+    overflow-x: auto;
+    line-height: 1.6;
+    font-size: 14px;
+    margin: 10px 0;
+}
+
+.markdown-content pre code {
+    background-color: transparent;
+    color: #333;
+    padding: 0;
+    border-radius: 0;
+    display: block;
+    line-height: 1.6;
+}
+
 .empty-chat {
     margin: 0 auto;
 }
@@ -203,7 +223,7 @@
 }
 
 .markdown-content th {
-    background-color: #007bff;
+    background-color: #6c757d;
     color: white;
 }
 
@@ -284,6 +304,19 @@
     font-size: 14px;
     color: #475569;
     line-height: 1.4;
+}
+
+/* Reduce paragraph spacing in thinking content */
+.thinking-content p {
+    margin: 6px 0;
+}
+
+.thinking-content p:first-child {
+    margin-top: 0;
+}
+
+.thinking-content p:last-child {
+    margin-bottom: 0;
 }
 
 .thinking-content .typing-dots {
