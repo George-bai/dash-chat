@@ -74,7 +74,8 @@ const useTypewriter = (text, speed = 30, enabled = true) => {
         const typeText = (timestamp) => {
             if (timestamp - lastTimeRef.current >= speed) {
                 if (indexRef.current < text.length) {
-                    setDisplayText(text.slice(0, indexRef.current + 1));
+                    const newText = text.slice(0, indexRef.current + 1);
+                    setDisplayText(newText);
                     indexRef.current++;
                     lastTimeRef.current = timestamp;
                 }
@@ -153,11 +154,13 @@ const ThinkingSection = ({ thinking, isExpanded, onToggle, isStreaming, typewrit
     const contentRef = useRef(null);
     const [height, setHeight] = useState(0);
     
-    // Use typewriter effect only when streaming
+    // Use typewriter effect when streaming and thinking is not complete
+    const shouldUseTypewriter = isStreaming && !thinking.isComplete && isExpanded;
+    
     const { displayText, isTyping } = useTypewriter(
         thinking.content, 
         typewriterSpeed, 
-        isStreaming && isExpanded
+        shouldUseTypewriter
     );
     
     // Use typewriter text when streaming, full text when complete
@@ -215,12 +218,34 @@ const StreamingMessage = ({
     const [expandedThinking, setExpandedThinking] = useState({});
     const parseStateRef = useRef({ inThinking: false });
     
-    const content = isStreaming ? message.streamingContent || '' : message.content || '';
-    const { thinkingSections, mainContent } = parseThinkingContent(content);
+    let thinkingSections = [];
+    let mainContent = '';
+    
+    if (isStreaming) {
+        // Use separate content streams during streaming
+        const thinkingContent = message.streamingThinkingContent || '';
+        mainContent = message.streamingMainContent || '';
+        
+        // Create thinking section if we have thinking content
+        if (thinkingContent) {
+            thinkingSections = [{
+                id: `thinking-streaming-${message.id}`,
+                content: thinkingContent,
+                isComplete: !message.inThinkingMode
+            }];
+        }
+    } else {
+        // Use parsed content for completed messages
+        const content = message.content || '';
+        const parsed = parseThinkingContent(content);
+        thinkingSections = parsed.thinkingSections;
+        mainContent = parsed.mainContent;
+    }
     
     // Auto-expand thinking sections while streaming
     useEffect(() => {
         if (isStreaming && thinkingSections.length > 0) {
+            console.log('[StreamingMessage] Auto-expanding thinking sections');
             const newExpanded = {};
             thinkingSections.forEach(thinking => {
                 newExpanded[thinking.id] = true;
@@ -559,6 +584,9 @@ const ChatComponent = ({
                         role: data.role || 'assistant',
                         content: '',
                         streamingContent: '',
+                        streamingThinkingContent: '',
+                        streamingMainContent: '',
+                        inThinkingMode: false,
                         isStreaming: true,
                         timestamp: Date.now()
                     }
@@ -568,9 +596,11 @@ const ChatComponent = ({
                 break;
                 
             case 'content':
+                console.log('[SSE content] Chunk received - length:', data.chunk?.length || 0, 'preview:', data.chunk?.substring(0, 50));
                 setStreamingMessages(prev => {
                     const existingMessage = prev[data.message_id];
                     if (!existingMessage) {
+                        console.log('[SSE content] Creating new message for chunk');
                         // Create message if it doesn't exist yet
                         return {
                             ...prev,
@@ -579,23 +609,54 @@ const ChatComponent = ({
                                 role: 'assistant',
                                 content: '',
                                 streamingContent: data.chunk || '',
+                                streamingThinkingContent: '',
+                                streamingMainContent: data.chunk || '',
+                                inThinkingMode: false,
                                 isStreaming: true
                             }
                         };
                     }
+                    
+                    const chunk = data.chunk || '';
+                    const inThinking = existingMessage.inThinkingMode;
+                    console.log('[SSE content] Routing chunk to:', inThinking ? 'thinking' : 'main', 'content');
+                    
                     return {
                         ...prev,
                         [data.message_id]: {
                             ...existingMessage,
-                            streamingContent: (existingMessage.streamingContent || '') + (data.chunk || '')
+                            streamingContent: (existingMessage.streamingContent || '') + chunk,
+                            streamingThinkingContent: inThinking 
+                                ? (existingMessage.streamingThinkingContent || '') + chunk
+                                : existingMessage.streamingThinkingContent || '',
+                            streamingMainContent: !inThinking
+                                ? (existingMessage.streamingMainContent || '') + chunk
+                                : existingMessage.streamingMainContent || ''
                         }
                     };
                 });
                 break;
                 
             case 'thinking_start':
+                console.log('[SSE thinking_start] Entering thinking mode for message:', data.message_id);
+                setStreamingMessages(prev => ({
+                    ...prev,
+                    [data.message_id]: {
+                        ...prev[data.message_id],
+                        inThinkingMode: true
+                    }
+                }));
+                break;
+                
             case 'thinking_end':
-                // Handled by the parsing logic in StreamingMessage
+                console.log('[SSE thinking_end] Exiting thinking mode for message:', data.message_id);
+                setStreamingMessages(prev => ({
+                    ...prev,
+                    [data.message_id]: {
+                        ...prev[data.message_id],
+                        inThinkingMode: false
+                    }
+                }));
                 break;
                 
             case 'stream_complete':
@@ -797,8 +858,8 @@ const ChatComponent = ({
             const bubbleStyle = message.role === "user" ? userBubbleStyle : assistantBubbleStyle;
             const isStreaming = message.isStreaming || false;
             
-            // Use StreamingMessage for messages with potential thinking content or streaming
-            if (isStreaming || (message.content && message.content.includes('<think>'))) {
+            // Use StreamingMessage for streaming messages or messages with thinking content
+            if (isStreaming || message.streamingThinkingContent || (message.content && message.content.includes('<think>'))) {
                 return (
                     <StreamingMessage
                         key={message.id || index}

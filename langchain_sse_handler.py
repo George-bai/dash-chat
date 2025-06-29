@@ -66,11 +66,23 @@ class LangChainSSEHandler:
                 
             def on_llm_new_token(self, token: str, **kwargs) -> None:
                 """Process each new token from the LLM."""
+                print(f"[SSE] New token received - length: {len(token)}, preview: {repr(token[:50])}")
                 self.full_content += token
                 self.buffer += token
                 
-                # Process buffer for thinking tags
-                self._process_buffer()
+                # Process buffer for thinking tags with rate limiting
+                import time
+                if not hasattr(self, 'last_send_time'):
+                    self.last_send_time = 0
+                
+                current_time = time.time()
+                # Rate limit: minimum 20ms between sends for smooth animation
+                if current_time - self.last_send_time >= 0.02:
+                    self._process_buffer()
+                    self.last_send_time = current_time
+                else:
+                    # Still process buffer but don't send immediately for very rapid tokens
+                    self._process_buffer()
             
             def _process_buffer(self):
                 """Process the buffer for thinking tags and content."""
@@ -119,16 +131,9 @@ class LangChainSSEHandler:
                         
                     else:
                         # No complete tags found - send content chunks
-                        if not self.in_thinking and len(self.buffer) > 20:
-                            # Send partial content outside thinking mode
-                            self.event_queue.put({
-                                'type': 'content',
-                                'message_id': self.message_id,
-                                'chunk': self.buffer
-                            })
-                            self.buffer = ""
-                        elif len(self.buffer) > 100:
-                            # Buffer getting too large, send it
+                        # Send smaller chunks for better typewriter effect
+                        if len(self.buffer) >= 3:  # Send every 3 characters for smooth streaming
+                            print(f"[SSE] Sending small content chunk - length: {len(self.buffer)}, in_thinking: {self.in_thinking}")
                             self.event_queue.put({
                                 'type': 'content',
                                 'message_id': self.message_id,
@@ -188,7 +193,10 @@ class LangChainSSEHandler:
                 def run_llm():
                     try:
                         # Use the raw prompt - no enhancement needed
-                        llm.invoke(prompt, callbacks=[callback])
+                        # Use config dict to pass callbacks (LangChain v0.1+ syntax)
+                        from langchain_core.runnables import RunnableConfig
+                        config = RunnableConfig(callbacks=[callback])
+                        llm.invoke(prompt, config=config)
                     except Exception as e:
                         print(f"LLM error: {e}")
                         event_queue.put({
