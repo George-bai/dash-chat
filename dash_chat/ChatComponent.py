@@ -101,7 +101,10 @@ class ChatComponent(Component):
         Speed of typewriter effect for thinking content (ms per character).
 
     - streaming_complete (string; optional):
-        Fired when streaming completes for a message."""
+        Fired when streaming completes for a message.
+
+    - load_more_messages (number; optional):
+        Triggered when user scrolls to top to load more historical messages."""
 
     _children_props = []
     _base_nodes = ["children"]
@@ -135,6 +138,7 @@ class ChatComponent(Component):
         thinking_collapse_delay=Component.UNDEFINED,
         typewriter_speed=Component.UNDEFINED,
         streaming_complete=Component.UNDEFINED,
+        load_more_messages=Component.UNDEFINED,
         **kwargs
     ):
         self._prop_names = [
@@ -162,6 +166,7 @@ class ChatComponent(Component):
             "thinking_collapse_delay",
             "typewriter_speed",
             "streaming_complete",
+            "load_more_messages",
         ]
         self._valid_wildcard_attributes = []
         self.available_properties = [
@@ -189,6 +194,7 @@ class ChatComponent(Component):
             "thinking_collapse_delay",
             "typewriter_speed",
             "streaming_complete",
+            "load_more_messages",
         ]
         self.available_wildcard_properties = []
         _explicit_args = kwargs.pop("_explicit_args")

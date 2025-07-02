@@ -127,12 +127,31 @@
 }
 
 .user .markdown-content a {
-    color: #fff;
+    color: #59d8f7;
     text-decoration: underline;
 }
 
 .user .markdown-content a:hover {
     color: #212427;
+}
+
+/* Generic link styles inside markdown (non-user messages) */
+.markdown-content a {
+    color: #007bff;
+    text-decoration: underline;
+}
+
+.markdown-content a:hover {
+    color: #0056b3;
+}
+
+/* Dark theme link styles inside markdown */
+.chat-container[data-theme="dark"] .markdown-content a {
+    color: #8ecbff;
+}
+
+.chat-container[data-theme="dark"] .markdown-content a:hover {
+    color: #addbff;
 }
 
 .markdown-content code {

@@ -57,7 +57,7 @@ const MessageTimestamp = ({ message, isStreaming }) => {
 
 
 // Parse thinking tags from streaming content
-const parseThinkingContent = (content) => {
+const parseThinkingContent = (content, messageId = 'default') => {
     const thinkingSections = [];
     let mainContent = '';
     let currentThinking = null;
@@ -67,9 +67,9 @@ const parseThinkingContent = (content) => {
     let i = 0;
     while (i < content.length) {
         if (content.substr(i, 7) === '<think>') {
-            // Start thinking section
+            // Start thinking section with stable ID based on message ID and position
             currentThinking = {
-                id: `thinking-${thinkingSections.length}`,
+                id: `thinking-${messageId}-${thinkingSections.length}`,
                 content: '',
                 isComplete: false
             };
@@ -99,6 +99,7 @@ const parseThinkingContent = (content) => {
         thinkingSections.push(currentThinking);
     }
     
+    
     return {
         thinkingSections,
         mainContent: mainContent.trim()
@@ -115,15 +116,25 @@ const ThinkingSection = ({ thinking, isExpanded, onToggle, isStreaming }) => {
     
     useEffect(() => {
         if (contentRef.current) {
-            setHeight(contentRef.current.scrollHeight);
+            // Small delay to ensure ReactMarkdown has rendered
+            const timer = setTimeout(() => {
+                const newHeight = contentRef.current.scrollHeight;
+                setHeight(newHeight);
+            }, 50);
+            
+            return () => clearTimeout(timer);
         }
-    }, [contentToShow]);
+    }, [contentToShow, thinking.id, isExpanded]);
     
     return (
         <div className={`thinking-section ${isStreaming ? 'streaming' : ''}`}>
             <button 
                 className="thinking-toggle"
-                onClick={onToggle}
+                onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onToggle();
+                }}
                 disabled={isStreaming}
             >
                 <span className="thinking-chevron" style={{
@@ -137,7 +148,7 @@ const ThinkingSection = ({ thinking, isExpanded, onToggle, isStreaming }) => {
             <div 
                 className="thinking-content-wrapper"
                 style={{
-                    height: isExpanded ? height : 0,
+                    height: isExpanded ? (height > 0 ? `${height}px` : 'auto') : '0px',
                     opacity: isExpanded ? 1 : 0,
                     overflow: 'hidden',
                     transition: isStreaming ? 'none' : 'all 0.3s ease-in-out'
@@ -160,7 +171,15 @@ const StreamingMessage = ({
     thinkingAutoCollapse, 
     thinkingCollapseDelay
 }) => {
+    // Fix: Use message ID in the initial state to make it stable  
     const [expandedThinking, setExpandedThinking] = useState({});
+    
+    // Track if this message was ever streaming during this component's lifecycle
+    const wasEverStreamingRef = useRef(isStreaming);
+    if (isStreaming) {
+        wasEverStreamingRef.current = true;
+    }
+    
     const parseStateRef = useRef({ inThinking: false });
     
     let thinkingSections = [];
@@ -182,36 +201,57 @@ const StreamingMessage = ({
     } else {
         // Use parsed content for completed messages
         const content = message.content || '';
-        const parsed = parseThinkingContent(content);
+        const parsed = parseThinkingContent(content, message.id);
         thinkingSections = parsed.thinkingSections;
         mainContent = parsed.mainContent;
     }
     
-    // Auto-expand thinking sections while streaming
+    // Load thinking states from session storage and auto-expand during streaming
     useEffect(() => {
-        if (isStreaming && thinkingSections.length > 0) {
+        if (thinkingSections.length > 0) {
             const newExpanded = {};
+            
             thinkingSections.forEach(thinking => {
-                newExpanded[thinking.id] = true;
+                if (isStreaming) {
+                    // Auto-expand during streaming
+                    newExpanded[thinking.id] = true;
+                } else {
+                    // Load from session storage for historical messages
+                    try {
+                        const stored = sessionStorage.getItem(`thinking-state-${thinking.id}`);
+                        const savedState = stored ? JSON.parse(stored) : false;
+                        newExpanded[thinking.id] = savedState;
+                    } catch (e) {
+                        newExpanded[thinking.id] = false;
+                    }
+                }
             });
+            
             setExpandedThinking(newExpanded);
         }
-    }, [isStreaming, thinkingSections.length]);
+    }, [isStreaming, thinkingSections.map(t => t.id).join(',')]); // Depend on thinking IDs, not length
     
-    // Auto-collapse completed thinking sections
+    // Auto-collapse completed thinking sections ONLY for streaming messages that just completed
+    // Historical messages (already complete) should NOT auto-collapse
     useEffect(() => {
-        if (thinkingAutoCollapse && thinkingSections.length > 0) {
+        
+        // Only auto-collapse if this was a streaming message that just completed
+        // Don't auto-collapse historical messages that are already complete
+        if (thinkingAutoCollapse && thinkingSections.length > 0 && !isStreaming && wasEverStreamingRef.current) {
             const timers = [];
             
             thinkingSections.forEach(thinking => {
-                if (thinking.isComplete && expandedThinking[thinking.id] !== false) {
+                // Only auto-collapse if:
+                // 1. Thinking section is complete
+                // 2. It's currently expanded (not already collapsed)
+                // 3. This message was streaming at some point (not a historical message)
+                if (thinking.isComplete && expandedThinking[thinking.id] === true) {
                     const timer = setTimeout(() => {
                         setExpandedThinking(prev => ({
                             ...prev,
                             [thinking.id]: false
                         }));
                     }, thinkingCollapseDelay);
-                    
                     timers.push(timer);
                 }
             });
@@ -220,14 +260,27 @@ const StreamingMessage = ({
                 timers.forEach(timer => clearTimeout(timer));
             };
         }
-    }, [thinkingSections.map(t => `${t.id}-${t.isComplete}`).join(','), thinkingAutoCollapse, thinkingCollapseDelay]);
+    }, [thinkingSections.map(t => `${t.id}-${t.isComplete}`).join(','), thinkingAutoCollapse, thinkingCollapseDelay, isStreaming, wasEverStreamingRef.current, message.id]);
     
-    const toggleThinking = (thinkId) => {
-        setExpandedThinking(prev => ({
-            ...prev,
-            [thinkId]: !prev[thinkId]
-        }));
-    };
+    const toggleThinking = useCallback((thinkId) => {
+        
+        setExpandedThinking(prev => {
+            const currentValue = prev[thinkId] || false;
+            const newValue = !currentValue;
+            const newState = {
+                ...prev,
+                [thinkId]: newValue
+            };
+            
+            // Persist individual thinking state to session storage using thinkId as key
+            try {
+                sessionStorage.setItem(`thinking-state-${thinkId}`, JSON.stringify(newValue));
+            } catch (e) {
+            }
+            
+            return newState;
+        });
+    }, [message.id]);
     
     return (
         <div className={`chat-bubble ${message.role}`} style={bubbleStyle}>
@@ -303,6 +356,7 @@ const ChatComponent = ({
     show_thinking_process: showThinkingProcess = true,
     thinking_auto_collapse: thinkingAutoCollapse = true,
     thinking_collapse_delay: thinkingCollapseDelay = 300,
+    load_more_messages: loadMoreMessages = 0,
 }) => {
     const userBubbleStyle = { ...defaultUserBubbleStyle, ...userBubbleStyleProp };
     const assistantBubbleStyle = { ...defaultAssistantBubbleStyle, ...assistantBubbleStyleProp };
@@ -359,36 +413,117 @@ const ChatComponent = ({
         }
     }, [localMessages, id, persistence, storeType]);
 
-    // hide typing indicator & handle new messages (only add user messages, SSE handles assistant messages)
+    // Handle new messages from props (including historical messages from database)
     useEffect(() => {
         if (messages.length > 0) {
+            setLocalMessages(prev => {    
+                if (messages.length > 1 && prev.length === 0) {
+                    return [...messages];
+                } else if (messages.length >= 1) {
+                    const newMessages = [...prev];
+                    let hasChanges = false;
+                    
+                    messages.forEach(msg => {
+                        const messageExists = newMessages.some(existing => existing.id === msg.id);
+                        if (!messageExists) {
+                            newMessages.push(msg);
+                            hasChanges = true;
+                        }
+                    });
+                    
+                    return hasChanges ? newMessages : prev;
+                }
+                
+                return prev;
+            });
+            
+            // Hide typing indicator for any new messages
             const lastMsg = messages.slice(-1).pop();
             if (lastMsg?.role === "assistant") {
-                // Assistant messages are handled by SSE, just hide typing indicator
                 setShowTyping(false);
-            } else if (lastMsg?.role === "user") {
-                // Add user messages to local messages
-                setLocalMessages(prev => {
-                    // Check if this user message already exists
-                    const messageExists = prev.some(msg => msg.id === lastMsg.id);
-                    return messageExists ? prev : [...prev, lastMsg];
-                });
             }
         }
     }, [messages]);
 
-    // Simple auto-scrolling: always scroll to bottom for new messages
-    useEffect(() => {
-        if (messageEndRef.current) {
-            messageEndRef.current.scrollIntoView({ behavior: "smooth" });
+    // Smart auto-scrolling: handle initial vs new messages differently
+    const isInitialLoadRef = useRef(true);
+    const lastMessageCountRef = useRef(0);
+    const scrollToBottomTimeoutRef = useRef(null);
+    const isLoadingHistoricalRef = useRef(false);
+    
+    useEffect(() => {        
+        if (messageEndRef.current && localMessages.length > 0) {
+            const isNewMessage = localMessages.length > lastMessageCountRef.current;
+            
+            // Skip auto-scroll if we're loading historical messages
+            if (isLoadingHistoricalRef.current) {
+                lastMessageCountRef.current = localMessages.length;
+                return;
+            }
+            
+            // On initial load OR when genuinely new messages are added (not historical)
+            if (isInitialLoadRef.current || (!isInitialLoadRef.current && isNewMessage)) {
+                
+                // Clear any existing scroll timeout
+                if (scrollToBottomTimeoutRef.current) {
+                    clearTimeout(scrollToBottomTimeoutRef.current);
+                }
+                
+                // Set flag to prevent scroll detection during programmatic scroll
+                isProgrammaticScrollRef.current = true;
+                
+                if (isInitialLoadRef.current) {
+                    // For initial load, use a longer wait to ensure full DOM rendering
+                    const scrollToBottomWhenReady = () => {
+                        
+                        if (chatMessagesRef.current && 
+                            chatMessagesRef.current.scrollHeight > chatMessagesRef.current.clientHeight) {
+                            
+                            // Container has proper dimensions, scroll to bottom immediately
+                            const maxScroll = chatMessagesRef.current.scrollHeight - chatMessagesRef.current.clientHeight;
+                            chatMessagesRef.current.scrollTop = maxScroll;
+                            
+                            // Clear the programmatic scroll flag
+                            setTimeout(() => {         
+                                isProgrammaticScrollRef.current = false;
+                                isInitialLoadRef.current = false;
+                            }, 100);
+                        } else {
+                            // Container still doesn't have proper dimensions, wait longer
+                            scrollToBottomTimeoutRef.current = setTimeout(scrollToBottomWhenReady, 100);
+                        }
+                    };
+                    
+                    // Start the scroll process with a reasonable delay
+                    scrollToBottomTimeoutRef.current = setTimeout(scrollToBottomWhenReady, 200);
+                } else {
+                    // For new messages, use smooth scroll
+                    messageEndRef.current.scrollIntoView({ behavior: "smooth" });
+                    
+                    // Clear flag after smooth scroll completes
+                    setTimeout(() => {
+                        isProgrammaticScrollRef.current = false;
+                    }, 1000);
+                }
+            }
+            
+            lastMessageCountRef.current = localMessages.length;
         }
     }, [localMessages]);
     
     // Always scroll to bottom when streaming (LLM is responding)
     useEffect(() => {
         if (isStreaming && messageEndRef.current) {
+            // Set flag to prevent scroll detection during streaming scroll
+            isProgrammaticScrollRef.current = true;
+            
             // Scroll immediately during streaming
             messageEndRef.current.scrollIntoView({ behavior: "smooth" });
+            
+            // Clear flag after scroll completes
+            setTimeout(() => {
+                isProgrammaticScrollRef.current = false;
+            }, 1000);
         }
     }, [streamingMessages, isStreaming]);
     
@@ -403,20 +538,31 @@ const ChatComponent = ({
     
     useEffect(() => {
         if (isStreaming && streamingContentLength > 0 && messageEndRef.current) {
+            // Set flag to prevent scroll detection during streaming content scroll
+            isProgrammaticScrollRef.current = true;
+            
             // Use requestAnimationFrame for smooth scrolling during rapid updates
             requestAnimationFrame(() => {
                 if (messageEndRef.current) {
                     messageEndRef.current.scrollIntoView({ behavior: "smooth" });
                 }
             });
+            
+            // Clear flag after scroll completes
+            setTimeout(() => {
+                isProgrammaticScrollRef.current = false;
+            }, 1000);
         }
     }, [streamingContentLength, isStreaming]);
     
-    // Cleanup scroll timeout
+    // Cleanup timeouts
     useEffect(() => {
         return () => {
             if (scrollTimeoutRef.current) {
                 clearTimeout(scrollTimeoutRef.current);
+            }
+            if (scrollToBottomTimeoutRef.current) {
+                clearTimeout(scrollToBottomTimeoutRef.current);
             }
         };
     }, []);
@@ -433,6 +579,68 @@ const ChatComponent = ({
             document.removeEventListener("mousedown", handleClickOutside);
         };
     }, []);
+    
+    // Scroll detection for loading more historical messages
+    const loadMoreTriggerRef = useRef(0);
+    const isLoadingMoreRef = useRef(false);
+    const isProgrammaticScrollRef = useRef(false);
+    const scrollDetectionEnabledRef = useRef(false);
+    
+    // Enable scroll detection only after initial load is complete
+    useEffect(() => {
+        // Enable scroll detection once we have messages and initial load is done
+        if (localMessages.length > 0) {
+            // Delay enabling scroll detection to ensure everything is settled
+            const enableTimer = setTimeout(() => {
+                scrollDetectionEnabledRef.current = true;
+            }, 2000); // Longer delay to ensure scroll to bottom is fully complete
+            
+            return () => clearTimeout(enableTimer);
+        }
+    }, [localMessages.length]);
+    
+    useEffect(() => {
+        const chatContainer = chatMessagesRef.current;
+        if (!chatContainer) return;
+        
+        const handleScroll = () => {
+            // Don't process scroll events if detection is not enabled yet
+            if (!scrollDetectionEnabledRef.current) {
+                return;
+            }
+            
+            const atBottom = chatContainer.scrollTop >= (chatContainer.scrollHeight - chatContainer.clientHeight - 10);
+            const atTop = chatContainer.scrollTop <= 100; // Increased threshold for easier testing
+            
+            // Don't trigger load more during programmatic scrolling, streaming, or if already loading
+            if (isProgrammaticScrollRef.current || isStreaming || isLoadingMoreRef.current) {
+                return;
+            }
+            
+            // Only trigger load more if user genuinely scrolled to top
+            if (atTop) {
+                isLoadingMoreRef.current = true;
+                isLoadingHistoricalRef.current = true; // Set flag to prevent auto-scroll
+                
+                // Trigger load more messages by incrementing the counter
+                loadMoreTriggerRef.current += 1;
+                setProps({ 
+                    load_more_messages: loadMoreTriggerRef.current 
+                });
+                
+                // Reset loading flags after a delay
+                setTimeout(() => {
+                    isLoadingMoreRef.current = false;
+                    isLoadingHistoricalRef.current = false;
+                }, 3000); // Slightly longer to ensure historical messages finish loading
+            }
+        };
+        
+        chatContainer.addEventListener('scroll', handleScroll);
+        return () => {
+            chatContainer.removeEventListener('scroll', handleScroll);
+        };
+    }, [isStreaming, setProps]);
     
     // Initialize SSE connection
     useEffect(() => {
@@ -812,10 +1020,16 @@ const ChatComponent = ({
             const isStreaming = message.isStreaming || false;
             
             // Use StreamingMessage for streaming messages or messages with thinking content
-            if (isStreaming || message.streamingThinkingContent || (message.content && message.content.includes('<think>'))) {
+            const hasThinkingContent = message.content && (
+                message.content.includes('<think>') || 
+                message.content.includes('&lt;think&gt;')
+            );
+            if (isStreaming || message.streamingThinkingContent || hasThinkingContent) {
+                // Create stable key that includes streaming state to prevent unnecessary re-mounts
+                const messageKey = `${message.id || index}-${message.role}-${isStreaming ? 'streaming' : 'complete'}`;
                 return (
                     <StreamingMessage
-                        key={message.id || index}
+                        key={messageKey}
                         message={message}
                         isStreaming={isStreaming}
                         bubbleStyle={bubbleStyle}

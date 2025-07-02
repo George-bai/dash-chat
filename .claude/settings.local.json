@@ -14,7 +14,8 @@
       "Bash(curl:*)",
       "Bash(npm run build:*)",
       "WebFetch(domain:python.langchain.com)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": []
   }
