@@ -437,6 +437,7 @@ const ChatComponent = ({
             const firstVisibleMessageId = localMessages.length > 0 ? localMessages[0].id : null;
             
             setLocalMessages(prev => {
+                
                 // Check if this is a complete flow switch by comparing message IDs
                 const allMessageIdsMatch = prev.length > 0 && messages.length > 0 && 
                                          messages.every(msg => prev.some(prevMsg => prevMsg.id === msg.id));
@@ -708,6 +709,8 @@ const ChatComponent = ({
         if (!chatContainer) return;
         
         const handleScroll = () => {
+            // Always log scroll events for debugging
+            
             // Don't process scroll events if detection is not enabled yet
             if (!scrollDetectionEnabledRef.current) {
                 return;
@@ -783,6 +786,11 @@ const ChatComponent = ({
     const connectSSE = () => {
         if (!sseEndpoint) return;
         
+        // Don't create multiple connections to the same endpoint
+        if (sseRef.current) {
+            sseRef.current.close();
+            sseRef.current = null;
+        }
         const eventSource = new EventSource(sseEndpoint);
         const completedMessages = new Set();
         let connectionClosed = false;
@@ -797,6 +805,7 @@ const ChatComponent = ({
                 }
                 handleSSEMessage(data);
             } catch (e) {
+                console.error('[CLIENT] Error parsing SSE message:', e);
             }
         };
         
@@ -976,13 +985,48 @@ const ChatComponent = ({
                 break;
                 
             case 'error':
-                // Remove failed message from streaming
+                // Handle error by showing error message
                 setStreamingMessages(prev => {
-                    const newStreaming = { ...prev };
-                    delete newStreaming[data.message_id];
-                    return newStreaming;
+                    const streamingMessage = prev[data.message_id];
+                    if (streamingMessage) {
+                        // Create error message
+                        const errorMessage = {
+                            id: data.message_id,
+                            role: streamingMessage.role || 'assistant',
+                            content: data.error || 'An error occurred while processing your request.',
+                            isStreaming: false,
+                            timestamp: streamingMessage.timestamp,
+                            completedAt: Date.now(),
+                            isError: true
+                        };
+                        
+                                
+                        // Move to local messages
+                        setLocalMessages(prevLocal => {
+                                        return [...prevLocal, errorMessage];
+                        });
+                        
+                        // Remove from streaming
+                        const newStreaming = { ...prev };
+                        delete newStreaming[data.message_id];
+                        
+                        return newStreaming;
+                    }
+                    return prev;
                 });
                 setShowTyping(false);
+                setIsStreaming(false);
+                
+                // Close the SSE connection since we got an error
+                if (sseRef.current) {
+                        sseRef.current.close();
+                    sseRef.current = null;
+                }
+                
+                // Clear the SSE endpoint to prevent automatic reconnection
+                if (setProps) {
+                    setProps({ sse_endpoint: null });
+                }
                 break;
         }
     }, [setProps]);
@@ -1119,7 +1163,16 @@ const ChatComponent = ({
                 return null;
             }
             
-            const bubbleStyle = message.role === "user" ? userBubbleStyle : assistantBubbleStyle;
+            // Apply error styling if message is an error
+            let bubbleStyle = message.role === "user" ? userBubbleStyle : assistantBubbleStyle;
+            if (message.isError) {
+                bubbleStyle = {
+                    ...bubbleStyle,
+                    backgroundColor: "#fee",
+                    borderLeft: "3px solid #c00",
+                    color: "#600"
+                };
+            }
             const isStreaming = message.isStreaming || false;
             
             // Use StreamingMessage for streaming messages or messages with thinking content
