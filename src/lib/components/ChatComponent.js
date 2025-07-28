@@ -420,6 +420,8 @@ const ChatComponent = ({
     // Handle new messages from props (including historical messages from database)
     const previousScrollHeightRef = useRef(0);
     const previousFirstMessageIdRef = useRef(null);
+    const previousMessagesRef = useRef([]);
+    const previousMessageOffsetRef = useRef(0);
     
     useEffect(() => {
         // Handle empty messages array - clear local messages when explicitly set to empty
@@ -434,37 +436,59 @@ const ChatComponent = ({
             const chatContainer = chatMessagesRef.current;
             const scrollTopBefore = chatContainer?.scrollTop || 0;
             const scrollHeightBefore = chatContainer?.scrollHeight || 0;
-            const firstVisibleMessageId = localMessages.length > 0 ? localMessages[0].id : null;
+            
+            // Find the first visible message in viewport
+            let firstVisibleMessageId = null;
+            let firstVisibleMessageOffset = 0;
+            if (chatContainer && localMessages.length > 0) {
+                const messageElements = chatContainer.querySelectorAll('[data-message-id]');
+                const containerTop = chatContainer.scrollTop;
+                const containerBottom = containerTop + chatContainer.clientHeight;
+                
+                for (const element of messageElements) {
+                    const elementTop = element.offsetTop;
+                    const elementBottom = elementTop + element.offsetHeight;
+                    const messageId = element.getAttribute('data-message-id');
+                    
+                    // Find first message that's at least partially visible
+                    if (elementBottom > containerTop && elementTop < containerBottom) {
+                        firstVisibleMessageId = messageId;
+                        firstVisibleMessageOffset = elementTop - containerTop;
+                        break;
+                    }
+                }
+            }
             
             setLocalMessages(prev => {
+                // Check for historical load first (before flow switch check)
+                const isHistoricalLoad = prev.length > 0 && 
+                                       messages.length > prev.length && 
+                                       messages.some(msg => msg.id === prev[0].id) &&
+                                       messages[0].id !== prev[0].id;
                 
-                // Check if this is a complete flow switch by comparing message IDs
-                const allMessageIdsMatch = prev.length > 0 && messages.length > 0 && 
-                                         messages.every(msg => prev.some(prevMsg => prevMsg.id === msg.id));
-                
-                // For bulk updates (like historical loading), replace all messages
-                // For single message updates, merge carefully
+                // For initial load
                 if (messages.length >= 1 && prev.length === 0) {
-                    // This looks like a historical message load or flow switch - replace all
                     return [...messages];
-                } else if (messages.length >= 1 && !allMessageIdsMatch) {
-                    // Different set of messages - this is a flow switch, replace all
-                    return [...messages];
-                } else if (messages.length >= 1) {
-                    // Check if this is a historical load by comparing first message IDs
-                    const isHistoricalLoad = prev.length > 0 && 
-                                           messages.length > prev.length && 
-                                           messages.some(msg => msg.id === prev[0].id) &&
-                                           messages[0].id !== prev[0].id;
+                } 
+                // Check for historical load (new messages prepended)
+                else if (isHistoricalLoad) {
+                    isLoadingHistoricalRef.current = true;
                     
-                    if (isHistoricalLoad) {
-                        isLoadingHistoricalRef.current = true;
-                        
-                        // Store the previous first message ID to find it after update
-                        previousFirstMessageIdRef.current = prev[0].id;
-                        previousScrollHeightRef.current = scrollHeightBefore;
-                        
-                        // Replace all messages with the new set (which includes prepended historical messages)
+                    // Store the first visible message ID and its offset to maintain view
+                    previousFirstMessageIdRef.current = firstVisibleMessageId || prev[0].id;
+                    previousScrollHeightRef.current = scrollHeightBefore;
+                    previousMessagesRef.current = prev;
+                    previousMessageOffsetRef.current = firstVisibleMessageOffset;
+                    
+                    // Replace all messages with the new set (which includes prepended historical messages)
+                    return [...messages];
+                }
+                // Check if this is a complete flow switch by comparing message IDs
+                else {
+                    const allMessageIdsMatch = prev.length > 0 && messages.length > 0 && 
+                                             messages.every(msg => prev.some(prevMsg => prevMsg.id === msg.id));
+                    
+                    if (!allMessageIdsMatch) {
                         return [...messages];
                     } else {
                         // Handle single message updates or any message updates
@@ -499,49 +523,75 @@ const ChatComponent = ({
     // Maintain scroll position after historical messages are loaded
     useEffect(() => {
         if (isLoadingHistoricalRef.current && previousFirstMessageIdRef.current && chatMessagesRef.current) {
-            
             // Set programmatic scroll flag to prevent load more trigger
             isProgrammaticScrollRef.current = true;
             
-            // Wait a bit for DOM to update
-            setTimeout(() => {
-                // Find the element that was previously at the top
-                const messageElements = chatMessagesRef.current.querySelectorAll('[data-message-id]');
-                let targetElement = null;
-                
-                for (const element of messageElements) {
-                    if (element.getAttribute('data-message-id') === previousFirstMessageIdRef.current) {
-                        targetElement = element;
-                        break;
+            // Use requestAnimationFrame to ensure DOM has been painted
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    // Double RAF to ensure layout is complete
+                    if (!chatMessagesRef.current) {
+                        return;
                     }
-                }
-                
-                if (targetElement) {
-                    // Calculate the new scroll position to keep the previous first message in view
-                    const elementTop = targetElement.offsetTop;
-                    const newScrollTop = elementTop - 50; // Small offset from top for better UX
                     
+                    // Find the element that was previously visible
+                    const messageElements = chatMessagesRef.current.querySelectorAll('[data-message-id]');
+                    let targetElement = null;
                     
-                    chatMessagesRef.current.scrollTop = newScrollTop;
-                } else {
-                    // Fallback: maintain relative scroll position based on height difference
-                    const scrollHeightAfter = chatMessagesRef.current.scrollHeight;
-                    const heightDifference = scrollHeightAfter - previousScrollHeightRef.current;
+                    for (const element of messageElements) {
+                        const messageId = element.getAttribute('data-message-id');
+                        if (messageId === previousFirstMessageIdRef.current) {
+                            targetElement = element;
+                            break;
+                        }
+                    }
                     
-                    if (heightDifference > 0) {
+                    if (targetElement) {
+                        // Restore the exact scroll position to keep the message at the same viewport position
+                        const elementTop = targetElement.offsetTop;
                         
-                        chatMessagesRef.current.scrollTop += heightDifference;
+                        // Calculate new scroll position to maintain the same visual offset
+                        // The message should appear at the same distance from the top of the viewport
+                        const newScrollTop = elementTop - previousMessageOffsetRef.current;
+                        
+                        // Apply the scroll
+                        chatMessagesRef.current.scrollTop = newScrollTop;
+                        
+                        // Verify the scroll worked and fine-tune if needed
+                        setTimeout(() => {
+                            if (chatMessagesRef.current && targetElement) {
+                                const currentElementRect = targetElement.getBoundingClientRect();
+                                const currentContainerRect = chatMessagesRef.current.getBoundingClientRect();
+                                const currentOffset = currentElementRect.top - currentContainerRect.top;
+                                
+                                // Fine-tune if there's a significant difference
+                                const offsetDiff = Math.abs(currentOffset - previousMessageOffsetRef.current);
+                                if (offsetDiff > 5) {
+                                    chatMessagesRef.current.scrollTop = elementTop - previousMessageOffsetRef.current;
+                                }
+                            }
+                        }, 10);
+                    } else {
+                        // Fallback: maintain relative scroll position based on height difference
+                        const scrollHeightAfter = chatMessagesRef.current.scrollHeight;
+                        const heightDifference = scrollHeightAfter - previousScrollHeightRef.current;
+                        
+                        if (heightDifference > 0) {
+                            chatMessagesRef.current.scrollTop += heightDifference;
+                        }
                     }
-                }
-                
-                // Reset the flags after scroll adjustment
-                setTimeout(() => {
-                    isLoadingHistoricalRef.current = false;
-                    previousFirstMessageIdRef.current = null;
-                    previousScrollHeightRef.current = 0;
-                    isProgrammaticScrollRef.current = false;
-                }, 200);
-            }, 50); // Small delay to ensure DOM is updated
+                    
+                    // Reset the flags after scroll adjustment
+                    setTimeout(() => {
+                        isLoadingHistoricalRef.current = false;
+                        previousFirstMessageIdRef.current = null;
+                        previousScrollHeightRef.current = 0;
+                        previousMessagesRef.current = [];
+                        previousMessageOffsetRef.current = 0;
+                        isProgrammaticScrollRef.current = false;
+                    }, 300);
+                });
+            });
         }
     }, [localMessages]);
 
@@ -552,7 +602,6 @@ const ChatComponent = ({
     const isLoadingHistoricalRef = useRef(false);
     
     useEffect(() => {
-        
         if (messageEndRef.current && localMessages.length > 0) {
             const isNewMessage = localMessages.length > lastMessageCountRef.current;
             
@@ -564,7 +613,6 @@ const ChatComponent = ({
             
             // On initial load OR when genuinely new messages are added (not historical)
             if (isInitialLoadRef.current || (!isInitialLoadRef.current && isNewMessage)) {
-                
                 // Clear any existing scroll timeout
                 if (scrollToBottomTimeoutRef.current) {
                     clearTimeout(scrollToBottomTimeoutRef.current);
@@ -576,7 +624,6 @@ const ChatComponent = ({
                 if (isInitialLoadRef.current) {
                     // For initial load, use a longer wait to ensure full DOM rendering
                     const scrollToBottomWhenReady = () => {
-                        
                         if (chatMessagesRef.current && 
                             chatMessagesRef.current.scrollHeight > chatMessagesRef.current.clientHeight) {
                             
@@ -586,14 +633,12 @@ const ChatComponent = ({
                             
                             // Verify the scroll worked
                             setTimeout(() => {
-                                
                                 // Clear the programmatic scroll flag
                                 isProgrammaticScrollRef.current = false;
                                 isInitialLoadRef.current = false;
                             }, 100);
                         } else {
                             // Container still doesn't have proper dimensions, wait longer
-                            
                             scrollToBottomTimeoutRef.current = setTimeout(scrollToBottomWhenReady, 100);
                         }
                     };
@@ -609,7 +654,6 @@ const ChatComponent = ({
                         isProgrammaticScrollRef.current = false;
                     }, 1000);
                 }
-            } else {
             }
             
             lastMessageCountRef.current = localMessages.length;
@@ -709,19 +753,19 @@ const ChatComponent = ({
         if (!chatContainer) return;
         
         const handleScroll = () => {
-            // Always log scroll events for debugging
+            const scrollTop = chatContainer.scrollTop;
+            const scrollHeight = chatContainer.scrollHeight;
+            const clientHeight = chatContainer.clientHeight;
+            const atBottom = scrollTop >= (scrollHeight - clientHeight - 10);
+            const atTop = scrollTop <= 50; // Trigger threshold
             
             // Don't process scroll events if detection is not enabled yet
             if (!scrollDetectionEnabledRef.current) {
                 return;
             }
             
-            const atBottom = chatContainer.scrollTop >= (chatContainer.scrollHeight - chatContainer.clientHeight - 10);
-            const atTop = chatContainer.scrollTop <= 100; // Increased threshold for easier testing
-            
-            
             // Don't trigger load more during programmatic scrolling, streaming, or if already loading
-            if (isProgrammaticScrollRef.current || isStreaming || isLoadingMoreRef.current) {
+            if (isProgrammaticScrollRef.current || isStreaming || isLoadingMoreRef.current || isLoadingHistoricalRef.current) {
                 return;
             }
             
@@ -736,12 +780,10 @@ const ChatComponent = ({
                     load_more_messages: loadMoreTriggerRef.current 
                 });
                 
-                // Reset loading flags after a delay
+                // Reset loading flag after a reasonable delay
                 setTimeout(() => {
                     isLoadingMoreRef.current = false;
-                    isLoadingHistoricalRef.current = false;
-                }, 3000); // Slightly longer to ensure historical messages finish loading
-            } else {
+                }, 2000);
             }
         };
         
@@ -1388,6 +1430,11 @@ ChatComponent.propTypes = {
      * Fired when streaming completes for a message
      */
     streaming_complete: PropTypes.string,
+    
+    /**
+     * Triggered when user scrolls to top to load more historical messages
+     */
+    load_more_messages: PropTypes.number,
 };
 
 export default ChatComponent;
