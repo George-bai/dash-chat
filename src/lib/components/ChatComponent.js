@@ -196,7 +196,7 @@ const StreamingMessage = ({
             thinkingSections = [{
                 id: `thinking-streaming-${message.id}`,
                 content: thinkingContent,
-                isComplete: !message.inThinkingMode
+                isComplete: !message.inThinkingMode && thinkingContent.length > 0
             }];
         }
     } else {
@@ -232,13 +232,13 @@ const StreamingMessage = ({
         }
     }, [isStreaming, thinkingSections.map(t => t.id).join(',')]); // Depend on thinking IDs, not length
     
-    // Auto-collapse completed thinking sections ONLY for streaming messages that just completed
+    // Auto-collapse completed thinking sections immediately when they complete
     // Historical messages (already complete) should NOT auto-collapse
     useEffect(() => {
         
-        // Only auto-collapse if this was a streaming message that just completed
+        // Only auto-collapse if this was a streaming message
         // Don't auto-collapse historical messages that are already complete
-        if (thinkingAutoCollapse && thinkingSections.length > 0 && !isStreaming && wasEverStreamingRef.current) {
+        if (thinkingAutoCollapse && thinkingSections.length > 0 && wasEverStreamingRef.current) {
             const timers = [];
             
             thinkingSections.forEach(thinking => {
@@ -246,6 +246,7 @@ const StreamingMessage = ({
                 // 1. Thinking section is complete
                 // 2. It's currently expanded (not already collapsed)
                 // 3. This message was streaming at some point (not a historical message)
+                // 4. We're either still streaming OR the thinking just completed
                 if (thinking.isComplete && expandedThinking[thinking.id] === true) {
                     const timer = setTimeout(() => {
                         setExpandedThinking(prev => ({
@@ -263,7 +264,7 @@ const StreamingMessage = ({
                 timers.forEach(timer => clearTimeout(timer));
             };
         }
-    }, [thinkingSections.map(t => `${t.id}-${t.isComplete}`).join(','), thinkingAutoCollapse, thinkingCollapseDelay, isStreaming, wasEverStreamingRef.current, message.id]);
+    }, [thinkingSections.map(t => `${t.id}-${t.isComplete}`).join(','), thinkingAutoCollapse, thinkingCollapseDelay, wasEverStreamingRef.current, message.id]);
     
     const toggleThinking = useCallback((thinkId) => {
         
@@ -757,7 +758,11 @@ const ChatComponent = ({
             const scrollHeight = chatContainer.scrollHeight;
             const clientHeight = chatContainer.clientHeight;
             const atBottom = scrollTop >= (scrollHeight - clientHeight - 10);
-            const atTop = scrollTop <= 50; // Trigger threshold
+            
+            // Calculate scroll percentage from top (0% = top, 100% = bottom)
+            const scrollPercentageFromTop = (scrollTop / (scrollHeight - clientHeight)) * 100;
+            // Trigger when scrolled to top 30% of the scrollable area (70% from bottom)
+            const nearTop = scrollPercentageFromTop <= 30;
             
             // Don't process scroll events if detection is not enabled yet
             if (!scrollDetectionEnabledRef.current) {
@@ -769,8 +774,8 @@ const ChatComponent = ({
                 return;
             }
             
-            // Only trigger load more if user genuinely scrolled to top
-            if (atTop) {
+            // Only trigger load more if user genuinely scrolled to near top (30% from top)
+            if (nearTop) {
                 isLoadingMoreRef.current = true;
                 isLoadingHistoricalRef.current = true; // Set flag to prevent auto-scroll
                 
@@ -979,7 +984,9 @@ const ChatComponent = ({
                     ...prev,
                     [data.message_id]: {
                         ...prev[data.message_id],
-                        inThinkingMode: false
+                        inThinkingMode: false,
+                        // Mark the thinking section as complete when thinking ends
+                        streamingThinkingContent: prev[data.message_id]?.streamingThinkingContent || ''
                     }
                 }));
                 break;
