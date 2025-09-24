@@ -4,212 +4,51 @@
 [![Supported Python versions](https://img.shields.io/pypi/pyversions/dash-chat.svg)](https://pypi.org/project/dash-chat/)
 [![CircleCI](https://dl.circleci.com/status-badge/img/gh/gbolly/dash-chat/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/gbolly/dash-chat/tree/main)
 
-dash-chat is a Dash component library chat interface. It provides a customizable and responsive chat UI with support for markdown, chat persistence, typing indicators, themes, and state management.
+`dash-chat` is a Dash component library that ships a complete chat surface. It provides a responsive UI, Markdown rendering, file uploads, streaming indicators, historical chat loading, and Dash-friendly state management so you can connect any LLM or rules-based assistant.
+
+## Features
+- **Dash-first integration** – send messages via the `new_message` property and push updates through `messages` without writing custom React.
+- **Rich message rendering** – render Markdown, attachments, Plotly graphs, tables, or mixed content payloads from the backend.
+- **File uploads** – allow users to attach files and control accepted types via `supported_input_file_types`; previews are shown for images and common documents.
+- **Persistence support** – opt into local or session storage; a built-in overflow menu lets users clear stored history.
+- **Streaming friendly** – Server-Sent Events (SSE) hooks display live assistant responses, emit `streaming_complete`, show stop controls, and automatically parse `<think>...</think>` reasoning blocks into collapsible sections.
+- **Historical loading** – react to the `load_more_messages` trigger when a user scrolls to the top of the transcript to fetch older conversations on demand.
+- **Customizable look and feel** – override light/dark theme colors, bubble styles, container sizing, and typing indicators.
 
 ## Installation
-```
-$ pip install dash-chat
-```
 
-## Basic Usage
-The simplest way to use the `dash_chat.ChatComponent` is to initialize the `messages` prop as an empty list. This is a list of messages that initialize the chat UI. Each message is an OpenAI-style dictionary that must have the following key-value pairs:
-- `role`: The message sender, either `"user"` or `"assistant"`.
-- `content`: The content of the message.
-
-A dash callback chat function is also required to handle how the messages are updated
-
-### Example 1
-Using **OpenAI** with dash-chat (requires the `openai` package - install it by running `pip install openai`)
-
-![dash-chat-demo](https://github.com/gbolly/dash-chat/blob/main/demo-gifs/dash-chat-demo.gif?raw=true)
-
-```python
-import os
-import dash
-from dash import callback, html, Input, Output, State
-from dash_chat import ChatComponent
-from openai import OpenAI
-
-
-api_key = os.environ.get("OPENAI_API_KEY")
-client = OpenAI(api_key=api_key)
-
-app = dash.Dash(__name__)
-
-app.layout = html.Div([
-    ChatComponent(
-        id="chat-component",
-        messages=[],
-    )
-])
-
-@callback(
-    Output("chat-component", "messages"),
-    Input("chat-component", "new_message"),
-    State("chat-component", "messages"),
-    prevent_initial_call=True,
-)
-def handle_chat(new_message, messages):
-    if not new_message:
-        return messages
-
-    updated_messages = messages + [new_message]
-
-    if new_message["role"] == "user":
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=updated_messages,
-            temperature=1.0,
-            max_tokens=150,
-        )
-
-        bot_response = {"role": "assistant", "content": response.choices[0].message.content.strip()}
-        return updated_messages + [bot_response]
-
-    return updated_messages
-
-if __name__ == "__main__":
-    app.run(debug=True)
+```bash
+pip install dash-chat
 ```
 
-### Example 2
-To send local images and files along with a message to the AI assistant, the structure of `content` in the `messages` prop becomes a list of dictionary. The `content` takes the structure;
-
-```python
-    [
-        {"type": "text", "text": "Analyze image"},
-        {
-            "type": "attachment",
-            "file": <base64File>,
-            "fileName": <file.name>,
-            "fileType": <file.type>
-        },
-    ]
-```
-In your dash callback, follow the OpenAI-style for uploading images with text.
-
-![dash-chat-with-image-demo](https://github.com/gbolly/dash-chat/blob/main/demo-gifs/dash-image-demo.gif?raw=true)
-
-```python
-import base64
-import dash
-import os
-import re
-from io import BytesIO
-from dash import callback, html, Input, Output, State
-from dash_chat import ChatComponent
-from openai import OpenAI
-
-
-api_key = os.environ.get("OPENAI_API_KEY")
-client = OpenAI(api_key=api_key)
-
-app = dash.Dash(__name__)
-
-app.layout = html.Div([
-    ChatComponent(
-        id="chat-component",
-        messages=[],
-        supported_input_file_types=[".png", ".jpg", ".pdf", ".doc"]
-    )
-])
-
-
-def decode_base64(data):
-    match = re.match(r"data:(.*?);base64,(.*)", data)
-    if match:
-        _, base64_data = match.groups()
-    else:
-        base64_data = data
-
-    missing_padding = len(base64_data) % 4
-    if missing_padding:
-        base64_data += "=" * (4 - missing_padding)
-
-    return base64.b64decode(base64_data)
-
-
-@callback(
-    Output("chat-component", "messages"),
-    Input("chat-component", "new_message"),
-    State("chat-component", "messages"),
-    prevent_initial_call=True,
-)
-def handle_chat(new_message, messages):
-    if not new_message:
-        return messages
-
-    if isinstance(new_message["content"], list):
-        user_content = []
-        for item in new_message["content"]:
-            if item["type"] == "text":
-                user_content.append({"type": "text", "text": item["text"]})
-            elif item["type"] == "attachment":
-                file_type = item["fileType"]
-                file_path = item["file"]
-                file_name = item["fileName"]
-
-                if file_type.startswith("image/"):
-                    # https://github.com/openai/openai-python#vision
-                    user_content.append(
-                        {"type": "image_url", "image_url": {"url": file_path}}
-                    )
-                else:
-                    # other file types (PDF, DOCX, etc.)
-                    # https://github.com/openai/openai-python?tab=readme-ov-file#file-uploads
-                    decoded_bytes = decode_base64(file_path)
-                    uploaded_file = client.files.create(
-                        file=(file_name, BytesIO(decoded_bytes), file_type),
-                        purpose="user_data"
-                    )
-                    user_content.append({
-                        "type": "text",
-                        "text": f"File '{file_name}' uploaded. ID: {uploaded_file.id}",
-                    })
-        updated_messages = messages + [{"role": "user", "content": user_content}]
-    else:
-        updated_messages = messages + [new_message]
-
-    if new_message["role"] == "user":
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=updated_messages,
-            temperature=1.0,
-            max_tokens=150,
-        )
-
-        bot_response = {
-            "role": "assistant",
-            "content": response.choices[0].message.content.strip(),
-        }
-
-        return updated_messages + [bot_response]
-
-    return updated_messages
-
-
-if __name__ == "__main__":
-    app.run(debug=True)
-```
-
-### Example 3
-`ChatComponent` is agnostic about which chatbot or AI assistant technology you're interacting with, so here's an example not using OpenAI
+## Quick start
+The `ChatComponent` expects a list of message dictionaries and emits the latest user message through the `new_message` property. Each message must include a `role` (`"user"` or `"assistant"`) and a `content` payload. For proper ordering and timestamp display, include unique `id` and `timestamp` fields in milliseconds when you append server responses.
 
 ```python
 import time
 import dash
-from dash import callback, html, Input, Output, State
+from dash import Dash, Input, Output, State, callback, html
 from dash_chat import ChatComponent
 
+app = Dash(__name__)
 
-app = dash.Dash(__name__)
-
-app.layout = html.Div([
+app.layout = html.Div(
     ChatComponent(
         id="chat-component",
-        messages=[],
+        messages=[
+            {
+                "id": "welcome",
+                "timestamp": int(time.time() * 1000),
+                "role": "assistant",
+                "content": "Hello! Ask me something and I'll respond.",
+            }
+        ],
+        theme="light",
+        typing_indicator="dots",
+        persistence=True,
+        persistence_type="local",
     )
-])
+)
 
 @callback(
     Output("chat-component", "messages"),
@@ -217,182 +56,125 @@ app.layout = html.Div([
     State("chat-component", "messages"),
     prevent_initial_call=True,
 )
-def handle_chat(new_message, messages):
+def respond_to_user(new_message, messages):
     if not new_message:
         return messages
 
-    updated_messages = messages + [new_message]
+    updated = messages + [new_message]
 
     if new_message["role"] == "user":
-        time.sleep(2)
-        bot_response = {"role": "assistant", "content": "Hello John Doe."}
-        return updated_messages + [bot_response]
+        reply = {
+            "id": f"assistant-{int(time.time() * 1000)}",
+            "timestamp": int(time.time() * 1000),
+            "role": "assistant",
+            "content": "Hello John Doe.",
+        }
+        return updated + [reply]
 
-    return updated_messages
+    return updated
 
 if __name__ == "__main__":
     app.run(debug=True)
 ```
 
-### **Persistence Functionality**
-The ChatComponent supports persistence, allowing messages to be stored and retrieved across page reloads. When persistence=True, messages are saved in the specified storage (localStorage or sessionStorage).
+## Message format and renderers
+`content` can be either a string, a structured dictionary, or a list mixing the supported renderers. The following payloads are rendered out of the box:
 
-On initialization, the component checks for stored messages.
-If stored messages exist, they are loaded; otherwise, an empty message list is used.
-New messages are automatically saved to storage.
-When the page is refreshed, stored messages are restored to maintain chat history.
-To enable persistence, set:
+| Type | Example payload | Notes |
+|------|-----------------|-------|
+| Markdown text | `"This will **render** as Markdown."` | Strings are interpreted as Markdown using `react-markdown` and GFM. |
+| Structured text | `{ "type": "text", "text": "This will be rendered as Markdown." }` | Useful when composing a mixed list of items. |
+| Attachment | `{ "type": "attachment", "file": "data:image/png;base64,...", "fileName": "plot.png", "fileType": "image/png" }` | Images are rendered inline; other files show a download link. |
+| Plotly graph | `{ "type": "graph", "props": { "figure": {...}, "config": {...}, "responsive": True } }` | Accepts most `dcc.Graph` props including `figure`, `config`, and responsiveness controls. |
+| Table | `{ "type": "table", "header": [...], "data": [...], "props": {"striped": True, "responsive": True} }` | Mirrors `dash-bootstrap-components` table options. |
+| Mixed content | `[{"type": "text", ...}, {"type": "graph", ...}, {"type": "table", ...}]` | Items are rendered vertically in order. |
+
+See the [`usage/`](usage) directory for runnable Dash apps that exercise each renderer, including combined text/graph/table outputs and file handling examples.
+
+### Handling file uploads
+The built-in composer exposes a paperclip button. Configure `supported_input_file_types` with a MIME string or list (e.g., `[".png", ".jpg", ".pdf"]`). When a user sends a message, any selected file is base64-encoded and appended to the outgoing `content` as an attachment. Your Dash callback can forward the encoded payload directly to your LLM API or decode and upload it as needed.
+
+### Persistence
+Set `persistence=True` to automatically cache messages in `localStorage` or `sessionStorage`. On load the component restores prior messages, and the overflow menu in the top-right corner lets the user clear stored history. Specify `persistence_type="local"` or `"session"` according to your retention needs.
+
+## Streaming responses with SSE
+Enable real-time assistant updates by turning on the streaming props:
+
+- `streaming_enabled=True` to activate streaming mode.
+- Update `sse_endpoint` with the URL of your SSE stream whenever the user sends a message.
+- Listen to `streaming_complete` to know which message finished streaming (the value is the streamed message id).
+- `show_thinking_process`, `thinking_auto_collapse`, and `thinking_collapse_delay` control how `<think>...</think>` reasoning blocks are displayed while streaming.
 
 ```python
-ChatComponent(
-    id="chat-component",
-    persistence=True,
-    persistence_type="local"  # or "session"
+from dash import Input, Output, State, callback, no_update
+from dash_chat import ChatComponent
+
+@callback(
+    Output("assistant-chat", "sse_endpoint"),
+    Input("assistant-chat", "new_message"),
+    State("assistant-chat", "messages"),
+    prevent_initial_call=True,
 )
+def start_stream(new_message, messages):
+    if new_message and new_message.get("role") == "user":
+        encoded_prompt = urllib.parse.quote(new_message["content"])
+        return f"/api/sse/chat?prompt={encoded_prompt}&message_id={new_message['id']}"
+    return no_update
 ```
 
-### **Renderers (Graphs, Tables, Attachments & Text)**
-`dash-chat` supports rich content rendering by allowing messages to contain structured content types like graphs, tables, and images. You can render custom content by passing a structured list to the content field of a message.
+The component expects JSON SSE events with a `type` field. The following event types are consumed internally:
 
-#### Text
-```python
-{
-    "role": "assistant",
-    "content": {
-        "type": "text",
-        "text": "This will be rendered as a markdown message"
-    },
-}
-```
+| Event type | Required fields | Effect |
+|------------|-----------------|--------|
+| `stream_start` | `message_id`, optional `role` | Creates the streaming placeholder and switches the input button to a stop icon. |
+| `content` | `message_id`, `chunk` | Appends token text to the in-progress response and hides the typing indicator on first receipt. |
+| `thinking_start` / `thinking_end` | `message_id` | Marks whether subsequent `content` chunks belong to a collapsible “Thinking process” block (for `<think>` tags). |
+| `stream_complete` | `message_id`, optional `full_content` | Finalizes the assistant message, emits `streaming_complete`, and closes the SSE connection. |
+| `error` | `message_id`, `error` | Records an error bubble and resets the stream state. |
 
-#### Attachments (Images & Files)
-```python
-{
-    "role": "assistant",
-    "content": {
-        "type": "attachment",
-        "file": "data:image/png;base64,...",
-        "fileName": "example.png",
-        "fileType": "image/png"
-    }
-}
-```
-Renders an image or a downloadable file preview.
+See [`app_langchain_example.py`](app_langchain_example.py) and the reusable [`LangChainSSEHandler`](langchain_sse_handler.py) for a full-stack example that streams Ollama completions with reasoning traces via LangChain. Pressing the stop button closes the SSE connection and inserts a “Response stopped by user.” message automatically.
 
-#### Graph
-```python
-{
-    "role": "assistant",
-    "content": {
-        "type": "graph",
-        "props": {
-            "figure": {
-                "data": [
-                    {
-                        "x": [1, 2, 3],
-                        "y": [4, 1, 2],
-                        "type": "bar", "name": "Demo"
-                    }
-                ],
-                "layout": {"title": "Bar Chart"},
-            },
-            "config": {"displaylogo": True},
-            "responsive": True
-        }
-    }
-}
-```
-Renders an interactive Plotly graph equivalent to [`dcc.Graph`](https://dash.plotly.com/dash-core-components/graph). The props object supports most of the arguments you would pass to a [`dcc.Graph`](https://dash.plotly.com/dash-core-components/graph).
+## Loading older conversations
+When users scroll near the top of the transcript the component increments the `load_more_messages` property. Monitor this value in a callback to fetch and prepend older messages from your datastore. Remember to include stable `id` values so the component can maintain scroll position as history loads.
 
-#### Table
-```python
-{
-    "role": "assistant",
-    "content": {
-        "type": "table",
-        "header": ["Order ID", "Item", "Quantity", "Total"],
-        "data": [
-            ["#1021", "Apple iPhone", 1, "$799"],
-            ["#1022", "Samsung Galaxy", 2, "$1398"]
-        ],
-        "props": {
-            "striped": True,
-            "bordered": True,
-            "hover": True,
-            "responsive": True,
-            "size": "lg"
-        }
-    }
-}
-```
-Renders an HTML table. You provide the table by setting:
+## Component properties
 
-- header: a list of strings representing the column names.
-    > Example: ["Order ID", "Item", "Quantity", "Total"]
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `id` | `string` | – | Unique component identifier for Dash callbacks. |
+| `messages` | `list[dict]` | `[]` | Chat transcript. Each item needs `role` (`"user"` or `"assistant"`) and `content`; include `id` and `timestamp` to enable timestamps and stable ordering. |
+| `new_message` | `dict` | – | Latest user message emitted by the component. Treat as read-only. |
+| `streaming_complete` | `string` | – | Message id emitted when a streaming assistant response finishes. |
+| `load_more_messages` | `number` | `0` | Incremented when the user scrolls to the top threshold, signalling that older history should be loaded. |
+| `theme` | `string` | "light" | Set to "dark" for the dark theme variant. |
+| `typing_indicator` | "dots" \| "spinner" | "dots" | Controls the typing indicator style while awaiting an assistant reply. |
+| `container_style` | `dict` | `None` | Inline styles applied to the outer container. |
+| `class_name` | `string` | "" | Custom CSS class on the container. |
+| `fill_height` | `bool` | `True` | Stretch to 100% height; set `False` to constrain the widget. |
+| `fill_width` | `bool` | `True` | Stretch to available width; set `False` to constrain to 50%. |
+| `input_container_style` | `dict` | `None` | Styles for the composer wrapper. |
+| `input_text_style` | `dict` | `None` | Styles for the textarea element. |
+| `input_placeholder` | `string` | "" | Placeholder text for the composer. |
+| `user_bubble_style` | `dict` | defaults to a light blue bubble | Merge custom styles into the user bubble. |
+| `assistant_bubble_style` | `dict` | defaults to a gray bubble | Merge custom styles into the assistant bubble. |
+| `supported_input_file_types` | `string` \| `list[string]` | "*/*" | Accept attribute for the file input. |
+| `persistence` | `bool` | `False` | Persist messages in browser storage. |
+| `persistence_type` | "local" \| "session" | "local" | Storage location when persistence is enabled. |
+| `streaming_enabled` | `bool` | `False` | Enables SSE streaming logic. |
+| `sse_endpoint` | `string` | `None` | SSE endpoint URL. Update this when you initiate a stream. |
+| `show_thinking_process` | `bool` | `True` | Toggle display of collapsible thinking sections. |
+| `thinking_auto_collapse` | `bool` | `True` | Collapse thinking sections automatically after completion. |
+| `thinking_collapse_delay` | `number` | `300` | Delay (ms) before auto-collapsing completed thinking sections. |
+| `typewriter_speed` | `number` | `10` | Reserved for fine-grained streaming animations (currently not used by the React implementation). |
 
-- data: a list of rows, where each row is a list of strings (or values) for the cells.
-    > Example: [["#1021", "Apple iPhone", 1, "$799"], ["#1022", "Samsung Galaxy", 2, "$1398"]]
-
-The props object supports all the arguments you would pass to [`dbc.Table`](https://dash-bootstrap-components.opensource.faculty.ai/docs/components/table/) in dash-bootstrap-components.
-
-#### Multiple renderers as a list at `"content"`
-Multiple supported renderers can also be provided as the assistants' content:
-```python
-{
-    "role": "assistant",
-    "content": [
-        {"type": "text", "text": "Here's a bar chart of your data."},
-        {
-            "type": "graph",
-            "props": {
-                "figure": {
-                    "data": [{"x": [1, 2, 3], "y": [4, 1, 2], "type": "bar", "name": "Demo"}],
-                    "layout": {"title": "Bar Chart"},
-                }
-                "config": {},
-                "responsive": True
-            },
-        },
-        {
-            "type": "table",
-            "header": ["Order ID", "Item", "Quantity", "Total"],
-            "data": [
-                ["#1021", "iPhone 14", 1, "$799"],
-                ["#1022", "Galaxy S22", 2, "$1398"],
-                ["#1023", "Pixel 7", 1, "$599"],
-            ],
-            "props": {
-                "striped": True
-            },
-        },
-    ]
-}
-```
-For a complete example of how to setup dash apps and how to uses renderers see the `usage` folder.
-
-### **Props**
-
-`ChatComponent` can be configured with the following properties:
-
-| Prop Name                     | Type                       | Default Value                 | Description                                                                                   |
-|-------------------------------|----------------------------|-------------------------------|-----------------------------------------------------------------------------------------------|
-| **id**                        | `string`                  | `None`                         | Unique identifier for the component, required for Dash callbacks.                             |
-| **container_style**           | `dict`                    | `None`                         | Inline css styles to customize the chat container.                                            |
-| **fill_height**               | `boolean`                 | `True`                         | Whether to vertically fill the screen with the chat container. If `False`, constrains height. |
-| **fill_width**                | `boolean`                 | `True`                         | Whether to horizontally fill the screen with the chat container. If `False`, constrains width.|
-| **input_container_style**     | `dict`                    | `None`                         | Inline css styles for the container holding the message input field.                          |
-| **input_text_style**          | `dict`                    | `None`                         | Inline css styles for the message input field itself.                                         |
-| **messages**                  | `list of dicts`           | `None`                         | List of chat messages. Each message object must include: `role` and `content`. Initialize as an empty list if no on first load.                  |
-| **theme**                     | `string`                  | `"light"`                      | Theme for the chat interface. Options: `"light"` or `"dark"`.                                 |
-| **typing_indicator**          | `string`                  | `"dots"`                       | Type of typing indicator. Options: `"dots"` (animated dots) or `"spinner"` (spinner).         |
-| **user_bubble_style**         | `dict`                    | `{"backgroundColor": "#007bff", "color": "white", "marginLeft": "auto", "textAlign": "right"}`                                   | Inline css styles to customize the message bubble for user.            |
-| **assistant_bubble_style**    | `dict`                    | `{"backgroundColor": "#f1f0f0", "color": "black", "marginRight": "auto", "textAlign": "left"}`                                   | Inline css styles to customize the message bubble for assistant.       |
-| **input_placeholder**         | `string`                  | `None`                         | Placeholder text to be used in the input box.                                                 |
-| **class_name**                | `string`                  | `None`                         | Name to use as class attribute on the main chat container.                                    |
-| **persistence**               | `boolean`                 | `False`                        | Whether to store chat messages so that it can be persisted.                                   |
-| **persistence_type**          | `string`                  | `"local"`                      | Where chat messages will be stored for persistence. Options: `"local"` or `"session"`         |
-| **supported_input_file_types**          | `string`                  | `"*/*"`                | String or list of file types to support in the file input         |
+## Examples
+- [`usage/usage.py`](usage/usage.py): minimal echo bot with persistence.
+- [`usage/usage_with_image.py`](usage/usage_with_image.py): OpenAI Vision-style upload workflow.
+- [`usage/usage_graph_renderer.py`](usage/usage_graph_renderer.py): Plotly graph renderer.
+- [`usage/usage_table_renderer.py`](usage/usage_table_renderer.py): Dash Bootstrap table renderer.
+- [`usage/usage_combine_rendering.py`](usage/usage_combine_rendering.py): Mixed text, chart, and table output.
+- [`app_langchain_example.py`](app_langchain_example.py): Streaming LangChain + Ollama demo.
 
 ## License
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+This project is licensed under the MIT License. See [LICENSE.txt](LICENSE.txt) for details.
