@@ -254,6 +254,14 @@
     background-color: #ddd;
 }
 
+/* Only address markdown horizontal overflow (e.g., wide tables) */
+.markdown-content table {
+    /* Allow horizontal scroll only for tables, keep rest of markdown unaffected */
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+}
+
 /* Thinking section container */
 .thinking-section {
     margin-bottom: 12px;

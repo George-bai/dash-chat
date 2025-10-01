@@ -3,9 +3,10 @@ from setuptools import setup
 from pathlib import Path
 
 here = Path(__file__).parent
-with open("package.json") as f:
+# Explicitly read metadata files as UTF-8 to avoid Windows cp1252 decoding errors
+with open("package.json", encoding="utf-8") as f:
     package = json.load(f)
-long_description = (here / "README.md").read_text()
+long_description = (here / "README.md").read_text(encoding="utf-8")
 
 package_name = package["name"].replace(" ", "_")
 
