@@ -21,6 +21,8 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     install_requires=[],
+    python_requires=">=3.9",
+    setup_requires=["setuptools<81"],
     classifiers=[
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3 :: Only",
