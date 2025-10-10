@@ -29,7 +29,9 @@ import "../../styles/chatStyles.css";
 
 // Helper function to format timestamp with full date
 const formatTimestamp = (timestamp) => {
-    if (!timestamp) return '';
+    if (!timestamp) {
+        return '';
+    }
     const date = new Date(timestamp);
     return date.toLocaleString([], { 
         year: 'numeric',
@@ -55,8 +57,21 @@ const MessageTimestamp = ({ message, isStreaming }) => {
     );
 };
 
+MessageTimestamp.propTypes = {
+    message: PropTypes.shape({
+        timestamp: PropTypes.number,
+        role: PropTypes.string
+    }).isRequired,
+    isStreaming: PropTypes.bool
+};
+
 
 // Parse thinking tags from streaming content
+// Length of '<think>' tag
+const THINK_TAG_OPEN_LENGTH = 7;
+// Length of '</think>' tag
+const THINK_TAG_CLOSE_LENGTH = 8;
+
 const parseThinkingContent = (content, messageId = 'default') => {
     const thinkingSections = [];
     let mainContent = '';
@@ -66,15 +81,16 @@ const parseThinkingContent = (content, messageId = 'default') => {
     // Process content character by character to handle tags properly
     let i = 0;
     while (i < content.length) {
-        if (content.substr(i, 7) === '<think>') {
+        if (content.slice(i, i + THINK_TAG_OPEN_LENGTH) === '<think>') {
             // Start thinking section with stable ID based on message ID and position
             currentThinking = {
                 id: `thinking-${messageId}-${thinkingSections.length}`,
                 content: '',
                 isComplete: false
             };
-            i += 7; // Skip '<think>'
-        } else if (content.substr(i, 8) === '</think>') {
+            // Skip '<think>'
+            i += THINK_TAG_OPEN_LENGTH;
+        } else if (content.slice(i, i + THINK_TAG_CLOSE_LENGTH) === '</think>') {
             // End thinking section
             if (currentThinking) {
                 currentThinking.isComplete = true;
@@ -82,7 +98,8 @@ const parseThinkingContent = (content, messageId = 'default') => {
                 currentThinking = null;
             }
             mainContentStarted = true;
-            i += 8; // Skip '</think>'
+            // Skip '</think>'
+            i += THINK_TAG_CLOSE_LENGTH;
         } else {
             // Add character to appropriate content
             if (currentThinking !== null) {
@@ -116,15 +133,21 @@ const ThinkingSection = ({ thinking, isExpanded, onToggle, isStreaming }) => {
     const contentToShow = thinking.content;
     
     useEffect(() => {
+        let timer;
         if (contentRef.current) {
             // Small delay to ensure ReactMarkdown has rendered
-            const timer = setTimeout(() => {
+            const RENDER_DELAY_MS = 50;
+            timer = setTimeout(() => {
                 const newHeight = contentRef.current.scrollHeight;
                 setHeight(newHeight);
-            }, 50);
-            
-            return () => clearTimeout(timer);
+            }, RENDER_DELAY_MS);
         }
+        
+        return () => {
+            if (timer) {
+                clearTimeout(timer);
+            }
+        };
     }, [contentToShow, thinking.id, isExpanded]);
     
     return (
@@ -163,6 +186,17 @@ const ThinkingSection = ({ thinking, isExpanded, onToggle, isStreaming }) => {
     );
 };
 
+ThinkingSection.propTypes = {
+    thinking: PropTypes.shape({
+        id: PropTypes.string,
+        content: PropTypes.string,
+        isComplete: PropTypes.bool
+    }).isRequired,
+    isExpanded: PropTypes.bool,
+    onToggle: PropTypes.func.isRequired,
+    isStreaming: PropTypes.bool
+};
+
 // Streaming message component with think tag parsing
 const StreamingMessage = ({ 
     message, 
@@ -180,8 +214,6 @@ const StreamingMessage = ({
     if (isStreaming) {
         wasEverStreamingRef.current = true;
     }
-    
-    const parseStateRef = useRef({ inThinking: false });
     
     let thinkingSections = [];
     let mainContent = '';
@@ -223,6 +255,7 @@ const StreamingMessage = ({
                         const savedState = stored ? JSON.parse(stored) : false;
                         newExpanded[thinking.id] = savedState;
                     } catch (e) {
+                        // Ignore storage errors
                         newExpanded[thinking.id] = false;
                     }
                 }
@@ -230,17 +263,17 @@ const StreamingMessage = ({
             
             setExpandedThinking(newExpanded);
         }
-    }, [isStreaming, thinkingSections.map(t => t.id).join(',')]); // Depend on thinking IDs, not length
+        // Depend on thinking IDs, not length
+    }, [isStreaming, JSON.stringify(thinkingSections.map(t => t.id))]);
     
     // Auto-collapse completed thinking sections immediately when they complete
     // Historical messages (already complete) should NOT auto-collapse
     useEffect(() => {
+        const timers = [];
         
         // Only auto-collapse if this was a streaming message
         // Don't auto-collapse historical messages that are already complete
         if (thinkingAutoCollapse && thinkingSections.length > 0 && wasEverStreamingRef.current) {
-            const timers = [];
-            
             thinkingSections.forEach(thinking => {
                 // Only auto-collapse if:
                 // 1. Thinking section is complete
@@ -256,15 +289,14 @@ const StreamingMessage = ({
                     }, thinkingCollapseDelay);
                     
                     timers.push(timer);
-                } else {
                 }
             });
-            
-            return () => {
-                timers.forEach(timer => clearTimeout(timer));
-            };
         }
-    }, [thinkingSections.map(t => `${t.id}-${t.isComplete}`).join(','), thinkingAutoCollapse, thinkingCollapseDelay, wasEverStreamingRef.current, message.id]);
+        
+        return () => {
+            timers.forEach(timer => clearTimeout(timer));
+        };
+    }, [JSON.stringify(thinkingSections.map(t => `${t.id}-${t.isComplete}`)), thinkingAutoCollapse, thinkingCollapseDelay, expandedThinking]);
     
     const toggleThinking = useCallback((thinkId) => {
         
@@ -280,11 +312,13 @@ const StreamingMessage = ({
             try {
                 sessionStorage.setItem(`thinking-state-${thinkId}`, JSON.stringify(newValue));
             } catch (e) {
+                // Ignore storage errors
             }
             
             return newState;
         });
-    }, [message.id]); // Remove expandedThinking dependency to prevent excessive re-renders
+        // Remove dependencies to prevent excessive re-renders
+    }, []);
     
     return (
         <div className={`chat-bubble ${message.role}`} style={bubbleStyle} data-message-id={message.id}>
@@ -305,6 +339,25 @@ const StreamingMessage = ({
             )}
         </div>
     );
+};
+
+StreamingMessage.propTypes = {
+    message: PropTypes.shape({
+        id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+        role: PropTypes.string,
+        content: PropTypes.string,
+        streamingContent: PropTypes.string,
+        streamingThinkingContent: PropTypes.string,
+        streamingMainContent: PropTypes.string,
+        inThinkingMode: PropTypes.bool,
+        isStreaming: PropTypes.bool,
+        timestamp: PropTypes.number
+    }).isRequired,
+    isStreaming: PropTypes.bool,
+    bubbleStyle: PropTypes.object,
+    showThinkingProcess: PropTypes.bool,
+    thinkingAutoCollapse: PropTypes.bool,
+    thinkingCollapseDelay: PropTypes.number
 };
 
 const defaultUserBubbleStyle = {
@@ -359,8 +412,8 @@ const ChatComponent = ({
     sse_endpoint: sseEndpoint = null,
     show_thinking_process: showThinkingProcess = true,
     thinking_auto_collapse: thinkingAutoCollapse = true,
-    thinking_collapse_delay: thinkingCollapseDelay = 300,
-    load_more_messages: loadMoreMessages = 0,
+    thinking_collapse_delay: thinkingCollapseDelay = 300, // eslint-disable-line no-magic-numbers
+    load_more_messages: loadMoreMessages = 0, // eslint-disable-line no-unused-vars
 }) => {
     
     const userBubbleStyle = { ...defaultUserBubbleStyle, ...userBubbleStyleProp };
@@ -382,6 +435,20 @@ const ChatComponent = ({
     
     // Simple scrolling state
     const scrollTimeoutRef = useRef(null);
+    
+    // Refs for scroll management and historical message loading
+    const isInitialLoadRef = useRef(true);
+    const lastMessageCountRef = useRef(0);
+    const scrollToBottomTimeoutRef = useRef(null);
+    const isLoadingHistoricalRef = useRef(false);
+    const previousScrollHeightRef = useRef(0);
+    const previousFirstMessageIdRef = useRef(null);
+    const previousMessagesRef = useRef([]);
+    const previousMessageOffsetRef = useRef(0);
+    const loadMoreTriggerRef = useRef(0);
+    const isLoadingMoreRef = useRef(false);
+    const isProgrammaticScrollRef = useRef(false);
+    const scrollDetectionEnabledRef = useRef(false);
 
     let storeType;
     if (persistenceType === "local") {
@@ -409,7 +476,7 @@ const ChatComponent = ({
             }
             initializedRef.current = true;
         }
-    }, [id, persistence, storeType]);
+    }, [id, persistence, storeType, messages]);
 
     // persist messages whenever localMessages updates
     useEffect(() => {
@@ -419,10 +486,6 @@ const ChatComponent = ({
     }, [localMessages, id, persistence, storeType]);
 
     // Handle new messages from props (including historical messages from database)
-    const previousScrollHeightRef = useRef(0);
-    const previousFirstMessageIdRef = useRef(null);
-    const previousMessagesRef = useRef([]);
-    const previousMessageOffsetRef = useRef(0);
     
     useEffect(() => {
         // Handle empty messages array - clear local messages when explicitly set to empty
@@ -435,7 +498,6 @@ const ChatComponent = ({
         if (messages.length > 0) {
             // Capture scroll position before updating messages
             const chatContainer = chatMessagesRef.current;
-            const scrollTopBefore = chatContainer?.scrollTop || 0;
             const scrollHeightBefore = chatContainer?.scrollHeight || 0;
             
             // Find the first visible message in viewport
@@ -485,32 +547,27 @@ const ChatComponent = ({
                     return [...messages];
                 }
                 // Check if this is a complete flow switch by comparing message IDs
-                else {
-                    const allMessageIdsMatch = prev.length > 0 && messages.length > 0 && 
-                                             messages.every(msg => prev.some(prevMsg => prevMsg.id === msg.id));
-                    
-                    if (!allMessageIdsMatch) {
-                        return [...messages];
-                    } else {
-                        // Handle single message updates or any message updates
-                        
-                        // Merge all messages from props that don't exist in local messages
-                        const newMessages = [...prev];
-                        let hasChanges = false;
-                        
-                        messages.forEach(msg => {
-                            const messageExists = newMessages.some(existing => existing.id === msg.id);
-                            if (!messageExists) {
-                                newMessages.push(msg);
-                                hasChanges = true;
-                            }
-                        });
-                        
-                        return hasChanges ? newMessages : prev;
-                    }
-                }
+                const allMessageIdsMatch = prev.length > 0 && messages.length > 0 && 
+                                         messages.every(msg => prev.some(prevMsg => prevMsg.id === msg.id));
                 
-                return prev;
+                if (!allMessageIdsMatch) {
+                    return [...messages];
+                }
+                // Handle single message updates or any message updates
+                
+                // Merge all messages from props that don't exist in local messages
+                const newMessages = [...prev];
+                let hasChanges = false;
+                
+                messages.forEach(msg => {
+                    const messageExists = newMessages.some(existing => existing.id === msg.id);
+                    if (!messageExists) {
+                        newMessages.push(msg);
+                        hasChanges = true;
+                    }
+                });
+                
+                return hasChanges ? newMessages : prev;
             });
             
             // Hide typing indicator for any new messages
@@ -566,12 +623,13 @@ const ChatComponent = ({
                                 const currentOffset = currentElementRect.top - currentContainerRect.top;
                                 
                                 // Fine-tune if there's a significant difference
+                                const OFFSET_THRESHOLD_PX = 5;
                                 const offsetDiff = Math.abs(currentOffset - previousMessageOffsetRef.current);
-                                if (offsetDiff > 5) {
+                                if (offsetDiff > OFFSET_THRESHOLD_PX) {
                                     chatMessagesRef.current.scrollTop = elementTop - previousMessageOffsetRef.current;
                                 }
                             }
-                        }, 10);
+                        }, 10); // eslint-disable-line no-magic-numbers
                     } else {
                         // Fallback: maintain relative scroll position based on height difference
                         const scrollHeightAfter = chatMessagesRef.current.scrollHeight;
@@ -590,17 +648,13 @@ const ChatComponent = ({
                         previousMessagesRef.current = [];
                         previousMessageOffsetRef.current = 0;
                         isProgrammaticScrollRef.current = false;
-                    }, 300);
+                    }, 300); // eslint-disable-line no-magic-numbers
                 });
             });
         }
     }, [localMessages]);
 
     // Smart auto-scrolling: handle initial vs new messages differently
-    const isInitialLoadRef = useRef(true);
-    const lastMessageCountRef = useRef(0);
-    const scrollToBottomTimeoutRef = useRef(null);
-    const isLoadingHistoricalRef = useRef(false);
     
     useEffect(() => {
         if (messageEndRef.current && localMessages.length > 0) {
@@ -637,15 +691,15 @@ const ChatComponent = ({
                                 // Clear the programmatic scroll flag
                                 isProgrammaticScrollRef.current = false;
                                 isInitialLoadRef.current = false;
-                            }, 100);
+                            }, 100); // eslint-disable-line no-magic-numbers
                         } else {
                             // Container still doesn't have proper dimensions, wait longer
-                            scrollToBottomTimeoutRef.current = setTimeout(scrollToBottomWhenReady, 100);
+                            scrollToBottomTimeoutRef.current = setTimeout(scrollToBottomWhenReady, 100); // eslint-disable-line no-magic-numbers
                         }
                     };
                     
                     // Start the scroll process with a reasonable delay
-                    scrollToBottomTimeoutRef.current = setTimeout(scrollToBottomWhenReady, 200);
+                    scrollToBottomTimeoutRef.current = setTimeout(scrollToBottomWhenReady, 200); // eslint-disable-line no-magic-numbers
                 } else {
                     // For new messages, use smooth scroll
                     messageEndRef.current.scrollIntoView({ behavior: "smooth" });
@@ -653,7 +707,7 @@ const ChatComponent = ({
                     // Clear flag after smooth scroll completes
                     setTimeout(() => {
                         isProgrammaticScrollRef.current = false;
-                    }, 1000);
+                    }, 1000); // eslint-disable-line no-magic-numbers
                 }
             }
             
@@ -673,7 +727,7 @@ const ChatComponent = ({
             // Clear flag after scroll completes
             setTimeout(() => {
                 isProgrammaticScrollRef.current = false;
-            }, 1000);
+            }, 1000); // eslint-disable-line no-magic-numbers
         }
     }, [streamingMessages, isStreaming]);
     
@@ -701,7 +755,7 @@ const ChatComponent = ({
             // Clear flag after scroll completes
             setTimeout(() => {
                 isProgrammaticScrollRef.current = false;
-            }, 1000);
+            }, 1000); // eslint-disable-line no-magic-numbers
         }
     }, [streamingContentLength, isStreaming]);
     
@@ -731,38 +785,42 @@ const ChatComponent = ({
     }, []);
     
     // Scroll detection for loading more historical messages
-    const loadMoreTriggerRef = useRef(0);
-    const isLoadingMoreRef = useRef(false);
-    const isProgrammaticScrollRef = useRef(false);
-    const scrollDetectionEnabledRef = useRef(false);
     
     // Enable scroll detection only after initial load is complete
     useEffect(() => {
+        let enableTimer;
         // Enable scroll detection once we have messages and initial load is done
         if (localMessages.length > 0) {
             // Delay enabling scroll detection to ensure everything is settled
-            const enableTimer = setTimeout(() => {
+            const SCROLL_DETECTION_DELAY_MS = 2000;
+            enableTimer = setTimeout(() => {
                 scrollDetectionEnabledRef.current = true;
-            }, 2000); // Longer delay to ensure scroll to bottom is fully complete
-            
-            return () => clearTimeout(enableTimer);
+            }, SCROLL_DETECTION_DELAY_MS);
         }
-    }, [localMessages.length]); // Remove dependency on isInitialLoadRef since it changes too quickly
+        
+        return () => {
+            if (enableTimer) {
+                clearTimeout(enableTimer);
+            }
+        };
+    }, [localMessages.length]);
     
     useEffect(() => {
         const chatContainer = chatMessagesRef.current;
-        if (!chatContainer) return;
         
         const handleScroll = () => {
+            if (!chatContainer) {
+                return;
+            }
             const scrollTop = chatContainer.scrollTop;
             const scrollHeight = chatContainer.scrollHeight;
             const clientHeight = chatContainer.clientHeight;
-            const atBottom = scrollTop >= (scrollHeight - clientHeight - 10);
             
             // Calculate scroll percentage from top (0% = top, 100% = bottom)
             const scrollPercentageFromTop = (scrollTop / (scrollHeight - clientHeight)) * 100;
             // Trigger when scrolled to top 30% of the scrollable area (70% from bottom)
-            const nearTop = scrollPercentageFromTop <= 30;
+            const SCROLL_TOP_THRESHOLD_PERCENT = 30;
+            const nearTop = scrollPercentageFromTop <= SCROLL_TOP_THRESHOLD_PERCENT;
             
             // Don't process scroll events if detection is not enabled yet
             if (!scrollDetectionEnabledRef.current) {
@@ -777,7 +835,8 @@ const ChatComponent = ({
             // Only trigger load more if user genuinely scrolled to near top (30% from top)
             if (nearTop) {
                 isLoadingMoreRef.current = true;
-                isLoadingHistoricalRef.current = true; // Set flag to prevent auto-scroll
+                // Set flag to prevent auto-scroll
+                isLoadingHistoricalRef.current = true;
                 
                 // Trigger load more messages by incrementing the counter
                 loadMoreTriggerRef.current += 1;
@@ -786,39 +845,66 @@ const ChatComponent = ({
                 });
                 
                 // Reset loading flag after a reasonable delay
+                const LOADING_RESET_DELAY_MS = 2000;
                 setTimeout(() => {
                     isLoadingMoreRef.current = false;
-                }, 2000);
+                }, LOADING_RESET_DELAY_MS);
             }
         };
         
-        chatContainer.addEventListener('scroll', handleScroll);
+        if (chatContainer) {
+            chatContainer.addEventListener('scroll', handleScroll);
+        }
+        
         return () => {
-            chatContainer.removeEventListener('scroll', handleScroll);
+            if (chatContainer) {
+                chatContainer.removeEventListener('scroll', handleScroll);
+            }
         };
     }, [isStreaming, setProps]);
     
-    // Initialize SSE connection
+    // Initialize SSE connection (sanitize legacy prompt param if present)
     useEffect(() => {
         if (streamingEnabled && sseEndpoint) {
+            try { console.info('[CHAT] SSE endpoint set:', sseEndpoint); } catch (e) {
+                // Ignore console errors
+            }
             // Close existing connection first
             if (sseRef.current) {
                 sseRef.current.close();
                 sseRef.current = null;
             }
-            
-            // Only create new connection if endpoint has actual prompt with content
-            if (sseEndpoint.includes('prompt=') && !sseEndpoint.endsWith('prompt=')) {
-                const urlParams = new URLSearchParams(sseEndpoint.split('?')[1] || '');
-                const prompt = urlParams.get('prompt');
-                const messageId = urlParams.get('message_id');
-                
-                if (prompt && prompt.trim() !== '' && messageId) {
-                    connectSSE();
+
+            // Strip legacy prompt param if present
+            let sanitizedEndpoint = sseEndpoint;
+            try {
+                const [base, query] = sseEndpoint.split('?');
+                const params = new URLSearchParams(query || '');
+                if (params.has('prompt')) {
+                    params.delete('prompt');
+                    const newQuery = params.toString();
+                    sanitizedEndpoint = newQuery ? `${base}?${newQuery}` : base;
+                    try { console.warn('[CHAT] Stripped legacy prompt param from SSE URL'); } catch (e) {
+                        // Ignore console errors
+                    }
+                }
+            } catch (e) {
+                // Ignore URL parsing errors
+            }
+
+            // Connect SSE if required params are present
+            const urlParams = new URLSearchParams((sanitizedEndpoint.split('?')[1]) || '');
+            const messageId = urlParams.get('message_id');
+            const userMessageId = urlParams.get('user_message_id');
+            if (messageId && userMessageId) {
+                connectSSE(sanitizedEndpoint); // eslint-disable-line no-use-before-define
+            } else {
+                try { console.warn('[CHAT] Missing required SSE params. message_id:', messageId, 'user_message_id:', userMessageId); } catch (e) {
+                    // Ignore console errors
                 }
             }
         }
-        
+
         return () => {
             if (sseRef.current) {
                 sseRef.current.close();
@@ -830,33 +916,43 @@ const ChatComponent = ({
         };
     }, [streamingEnabled, sseEndpoint]);
     
-    const connectSSE = () => {
-        if (!sseEndpoint) return;
+    const connectSSE = (endpointOverride = null) => {
+        const endpointToUse = endpointOverride || sseEndpoint;
+        if (!endpointToUse) {
+            return;
+        }
         
         // Don't create multiple connections to the same endpoint
         if (sseRef.current) {
             sseRef.current.close();
             sseRef.current = null;
         }
-        const eventSource = new EventSource(sseEndpoint);
+        const eventSource = new EventSource(endpointToUse);
         const completedMessages = new Set();
         let connectionClosed = false;
-        
+
         eventSource.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
+                try { console.debug('[CHAT] SSE message:', data.type); } catch (e) {
+                    // Ignore console errors
+                }
                 // Track when messages complete normally
                 if (data.type === 'stream_complete') {
                     completedMessages.add(data.message_id);
-                    connectionClosed = true; // Mark that we expect the connection to close
+                    // Mark that we expect the connection to close
+                    connectionClosed = true;
                 }
-                handleSSEMessage(data);
+                handleSSEMessage(data); // eslint-disable-line no-use-before-define
             } catch (e) {
                 console.error('[CLIENT] Error parsing SSE message:', e);
             }
         };
-        
+
         eventSource.onerror = (error) => {
+            try { console.error('[CHAT] SSE error:', error); } catch (e) {
+                // Ignore console errors
+            }
             
             // If we received a stream_complete event, this is normal closure
             if (connectionClosed) {
@@ -868,7 +964,7 @@ const ChatComponent = ({
             if (eventSource.readyState === EventSource.CLOSED) {
                 return;
             }
-            setConnectionError('Connection lost. Please try again.');
+            // Connection error - will be handled by streaming message state
             
             if (sseRef.current) {
                 sseRef.current.close();
@@ -893,14 +989,17 @@ const ChatComponent = ({
                     });
                     setIsStreaming(false);
                     return {};
-                } else {
-                    return prev;
                 }
+                return prev;
             });
         };
         
-        eventSource.onopen = () => {
-            // Connection opened
+        eventSource.onopen = () => { 
+            try { 
+                console.info('[CHAT] SSE connection opened'); 
+            } catch (e) {
+                // Ignore console errors
+            }
         };
         
         sseRef.current = eventSource;
@@ -966,6 +1065,46 @@ const ChatComponent = ({
                                 : existingMessage.streamingMainContent || ''
                         }
                     };
+                });
+                break;
+
+            case 'hitl_request':
+                // Render a temporary assistant bubble with Approve/Cancel buttons
+                setShowTyping(false);
+                setStreamingMessages(prev => ({
+                    ...prev,
+                    [data.message_id]: {
+                        id: data.message_id,
+                        role: 'assistant',
+                        content: '',
+                        streamingContent: '',
+                        streamingThinkingContent: prev[data.message_id]?.streamingThinkingContent || '',
+                        streamingMainContent: prev[data.message_id]?.streamingMainContent || '',
+                        inThinkingMode: false,
+                        isStreaming: true,
+                        timestamp: prev[data.message_id]?.timestamp || Date.now(),
+                        hitlRequest: {
+                            requestId: data.request_id,
+                            tool: data.tool,
+                            args: data.args || {}
+                        }
+                    }
+                }));
+                break;
+
+            case 'hitl_decision_recorded':
+                // Clear hitlRequest flag so normal streaming renderer takes over
+                setStreamingMessages(prev => {
+                    const msg = prev[data.message_id];
+                    if (!msg) {
+                        return prev;
+                    }
+                    const updated = { ...prev };
+                    updated[data.message_id] = { ...msg };
+                    if (updated[data.message_id].hitlRequest) {
+                        delete updated[data.message_id].hitlRequest;
+                    }
+                    return updated;
                 });
                 break;
                 
@@ -1077,6 +1216,10 @@ const ChatComponent = ({
                     setProps({ sse_endpoint: null });
                 }
                 break;
+            
+            default:
+                // Unknown message type - ignore
+                break;
         }
     }, [setProps]);
 
@@ -1131,8 +1274,11 @@ const ChatComponent = ({
                 setProps({ new_message: newMessage });
             }
 
-            // Show typing indicator until LLM response starts
+            // Show typing indicator until first content arrives
             setShowTyping(true);
+            try { console.info('[CHAT] Message sent; typing indicator ON'); } catch (e) {
+                // Ignore console errors
+            }
             setCurrentMessage("");
             setAttachment("");
         }
@@ -1229,9 +1375,41 @@ const ChatComponent = ({
                 message.content.includes('<think>') || 
                 message.content.includes('&lt;think&gt;')
             );
-            if (isStreaming || message.streamingThinkingContent || hasThinkingContent) {
+            if (isStreaming || message.streamingThinkingContent || hasThinkingContent || message.hitlRequest) {
                 // Create stable key that includes streaming state to prevent unnecessary re-mounts
                 const messageKey = `${message.id || index}-${message.role}-${isStreaming ? 'streaming' : 'complete'}`;
+                if (message.hitlRequest) {
+                    const { requestId, tool } = message.hitlRequest;
+                    const onDecision = async (approved) => {
+                        try {
+                            await fetch('/api/chat/hitl_decision', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    message_id: message.id,
+                                    request_id: requestId,
+                                    approved: Boolean(approved)
+                                })
+                            });
+                        } catch (e) {
+                            // Ignore fetch errors
+                        }
+                    };
+                    return (
+                        <div key={messageKey} className={`chat-bubble ${message.role}`} style={bubbleStyle} data-message-id={message.id}>
+                            <MessageTimestamp message={message} isStreaming={isStreaming} />
+                            <div className="markdown-content">
+                                <div><strong>Approval needed</strong>: Allow tool <code>{tool}</code> to run?</div>
+                                <div style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
+                                    <button className="btn-confirm" onClick={() => onDecision(true)}>Confirm</button>
+                                    <button className="btn-cancel" onClick={() => onDecision(false)}>Cancel</button>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
                 return (
                     <StreamingMessage
                         key={messageKey}
