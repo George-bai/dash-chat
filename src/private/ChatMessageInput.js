@@ -92,7 +92,7 @@ const MessageInput = ({
                         </div>
                     ) : selectedFile.type.startsWith("image/") ? (
                         <img src={filePreview} alt="Preview" className="file-preview-image" />
-                    ) : <p className="file-name-preview">{selectedFile.name} unsupported</p>}
+                    ) : <p className="file-name-preview">{selectedFile.name} preview unsupported</p>}
                 </div>
             )}
             <textarea
@@ -106,11 +106,10 @@ const MessageInput = ({
                         if (e.shiftKey) {
                             // Shift+Enter: Allow default behavior (new line)
                             return;
-                        } else {
-                            // Enter: Send message
-                            e.preventDefault();
-                            handleSend();
                         }
+                        // Enter: Send message
+                        e.preventDefault();
+                        handleSend();
                     }
                 }}
                 style={inputComponentStyles}

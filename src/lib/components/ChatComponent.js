@@ -1297,21 +1297,41 @@ const ChatComponent = ({
             sseRef.current.close();
             sseRef.current = null;
         }
-        
-        // Replace any incomplete streaming messages with stop message
+
+        // For each active streaming message:
+        //  - Ask backend to cancel & persist "Response stopped by user."
+        //  - Locally convert it into a completed cancel bubble for immediate UX.
         setStreamingMessages(prev => {
-            Object.keys(prev).forEach(messageId => {
+            const activeIds = Object.keys(prev || {});
+
+            activeIds.forEach(messageId => {
+                // Fire-and-forget cancel request to backend
+                try {
+                    fetch('/api/chat/cancel', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        credentials: 'include', 
+                        body: JSON.stringify({ message_id: messageId }),
+                    });
+                } catch (e) {
+                    // Ignore network errors; streamer fallback may still persist
+                }
+
+                // Preserve existing UX: show local "Response stopped by user." bubble
                 const stoppedMessage = {
                     ...prev[messageId],
                     content: 'Response stopped by user.',
                     isStreaming: false,
-                    completedAt: Date.now()
+                    completedAt: Date.now(),
                 };
                 setLocalMessages(prevLocal => [...prevLocal, stoppedMessage]);
             });
+
             return {};
         });
-        
+
         setIsStreaming(false);
     };
 
