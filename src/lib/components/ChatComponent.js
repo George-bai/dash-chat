@@ -420,7 +420,7 @@ const ChatComponent = ({
     const userBubbleStyle = { ...defaultUserBubbleStyle, ...userBubbleStyleProp };
     const assistantBubbleStyle = { ...defaultAssistantBubbleStyle, ...assistantBubbleStyleProp };
     const [currentMessage, setCurrentMessage] = useState("");
-    const [attachment, setAttachment] = useState("");
+    const [attachment, setAttachment] = useState([]);
     const [localMessages, setLocalMessages] = useState([]);
     const [showTyping, setShowTyping] = useState(false);
     const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -1276,19 +1276,25 @@ const ChatComponent = ({
     };
 
     const handleSendMessage = async () => {
-        if (currentMessage.trim() || attachment) {
+        if (currentMessage.trim() || (attachment && attachment.length > 0)) {
             let content;
 
-            if (attachment) {
-                const base64File = await convertFileToBase64(attachment);
-                content = [
-                    { type: "text", text: currentMessage.trim() },
-                    {
+            if (attachment && attachment.length > 0) {
+                // Convert all files to base64
+                const attachmentPromises = attachment.map(async (file) => {
+                    const base64File = await convertFileToBase64(file);
+                    return {
                         type: "attachment",
                         file: base64File,
-                        fileName: attachment.name,
-                        fileType: attachment.type
-                    },
+                        fileName: file.name,
+                        fileType: file.type
+                    };
+                });
+
+                const attachmentItems = await Promise.all(attachmentPromises);
+                content = [
+                    { type: "text", text: currentMessage.trim() },
+                    ...attachmentItems,
                 ];
             } else {
                 content = currentMessage.trim();
@@ -1318,7 +1324,7 @@ const ChatComponent = ({
                 // Ignore console errors
             }
             setCurrentMessage("");
-            setAttachment("");
+            setAttachment([]);
         }
     };
 

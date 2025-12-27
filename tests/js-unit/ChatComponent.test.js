@@ -10,7 +10,7 @@ describe("ChatComponent", () => {
     beforeAll(() => {
         window.HTMLElement.prototype.scrollIntoView = jest.fn();
         global.URL.createObjectURL = jest.fn(() => "mocked-file-url");
-    });    
+    });
 
     const defaultProps = {
         id: "chat",
@@ -63,11 +63,11 @@ describe("ChatComponent", () => {
         fireEvent.change(inputField, { target: { value: "This is a test message" } });
         const sendButton = screen.getByTestId("send-button");
         fireEvent.click(sendButton);
-    
+
         await waitFor(() => {
             expect(screen.getByTestId("typing-indicator")).toBeInTheDocument();
         });
-    
+
         // Simulate assistant response
         rerender(
             <ChatComponent
@@ -78,7 +78,7 @@ describe("ChatComponent", () => {
                 ]}
             />
         );
-    
+
         await waitFor(() => {
             expect(screen.queryByTestId("typing-indicator")).not.toBeInTheDocument();
         });
@@ -103,14 +103,14 @@ describe("ChatComponent", () => {
         fireEvent.change(fileInput, { target: { files: [testFile] } });
 
         // Expect file preview to appear
-        expect(screen.getByAltText("Preview")).toBeInTheDocument();
+        expect(screen.getByAltText("image.png")).toBeInTheDocument();
 
-        // Click remove button
-        const removeFileButton = screen.getByTestId("file-remove-button");
+        // Click remove button (now indexed for multi-file support)
+        const removeFileButton = screen.getByTestId("file-remove-button-0");
         fireEvent.click(removeFileButton);
 
         // Expect the file preview to be removed
-        expect(screen.queryByAltText("Preview")).not.toBeInTheDocument();
+        expect(screen.queryByAltText("image.png")).not.toBeInTheDocument();
     });
 
     it("allows the user to type a message and send it", () => {
@@ -123,7 +123,7 @@ describe("ChatComponent", () => {
 
         expect(sendButton).not.toHaveClass("disabled");
         expect(sendButton).not.toBeDisabled();
-    
+
         fireEvent.click(sendButton);
 
         expect(mockSetProps).toHaveBeenCalledWith({
@@ -133,7 +133,7 @@ describe("ChatComponent", () => {
 
     it("should scroll to the bottom when a new message is added", () => {
         const { getByTestId } = render(<ChatComponent messages={[{ role: "assistant", content: "This is a test message" }]} />);
-        
+
         fireEvent.click(getByTestId("send-button"));
         expect(window.HTMLElement.prototype.scrollIntoView).toHaveBeenCalled();
     });

@@ -86,121 +86,179 @@ const MessageInput = ({
     inputComponentStyles = null,
     showTyping = false,
     accept,
-    attachmentSpec,
-    currentAttachmentCount = 0,
+    attachmentSpec
 }) => {
     const fileInputRef = useRef(null);
-    const [selectedFile, setSelectedFile] = useState(null);
-    const [filePreview, setFilePreview] = useState(null);
+    const [selectedFiles, setSelectedFiles] = useState([]);
+    const [filePreviews, setFilePreviews] = useState([]);
     const [fileError, setFileError] = useState(null);
 
+    // Normalize attachment spec once per render so we can reuse it
+    const effectiveSpec = normalizeAttachmentSpec(attachmentSpec);
+    const maxFiles = typeof effectiveSpec.max_files === "number" && effectiveSpec.max_files > 0
+        ? effectiveSpec.max_files
+        : DEFAULT_ATTACHMENT_SPEC.max_files;
+
+    // Apply max_files per message: only count files selected for the current message
+    const totalExistingCount = selectedFiles.length;
+    const isAtMaxFileLimit = totalExistingCount >= maxFiles;
+
     const handleFileUpload = (event) => {
-        const file = event.target.files[0];
-        if (!file) {
+        const files = Array.from(event.target.files || []);
+        if (files.length === 0) {
             return;
         }
 
-        const effectiveSpec = normalizeAttachmentSpec(attachmentSpec);
-        const maxFiles = typeof effectiveSpec.max_files === "number" && effectiveSpec.max_files > 0
-            ? effectiveSpec.max_files
-            : DEFAULT_ATTACHMENT_SPEC.max_files;
+        // Calculate how many more files can be added for this message
+        const remainingSlots = maxFiles - totalExistingCount;
 
-        if (currentAttachmentCount >= maxFiles) {
+        if (remainingSlots <= 0) {
             setFileError(`Maximum number of files (${maxFiles}) reached. You cannot attach more files.`);
             event.target.value = "";
             return;
         }
 
-        const fileName = file.name || "";
-        const extensionMatch = fileName.toLowerCase().match(/\.([0-9a-z]+)$/i);
-        const ext = extensionMatch ? extensionMatch[1] : "";
+        // Limit files to remaining slots
+        const filesToAdd = files.slice(0, remainingSlots);
+        const validFiles = [];
+        const validPreviews = [];
 
-        let allowedMb;
-        const extKey = ext.toLowerCase();
+        for (const file of filesToAdd) {
+            const fileName = file.name || "";
+            const extensionMatch = fileName.toLowerCase().match(/\.([0-9a-z]+)$/i);
+            const ext = extensionMatch ? extensionMatch[1] : "";
 
-        if (Object.prototype.hasOwnProperty.call(effectiveSpec, extKey)) {
-            allowedMb = effectiveSpec[extKey];
-        } else if (IMAGE_EXTENSIONS.includes(extKey)) {
-            allowedMb = DEFAULT_IMAGE_MAX_MB;
-        } else if (TEXT_EXTENSIONS.includes(extKey)) {
-            // Fallback defaults for text/data files when not explicitly specified
-            if (extKey === "pdf" || extKey === "csv") {
-                allowedMb = DEFAULT_PDF_CSV_MAX_MB;
+            let allowedMb;
+            const extKey = ext.toLowerCase();
+
+            if (Object.prototype.hasOwnProperty.call(effectiveSpec, extKey)) {
+                allowedMb = effectiveSpec[extKey];
+            } else if (IMAGE_EXTENSIONS.includes(extKey)) {
+                allowedMb = DEFAULT_IMAGE_MAX_MB;
+            } else if (TEXT_EXTENSIONS.includes(extKey)) {
+                if (extKey === "pdf" || extKey === "csv") {
+                    allowedMb = DEFAULT_PDF_CSV_MAX_MB;
+                } else {
+                    allowedMb = DEFAULT_OTHER_TEXT_MAX_MB;
+                }
             } else {
-                allowedMb = DEFAULT_OTHER_TEXT_MAX_MB;
+                setFileError(`File type .${ext || "unknown"} is not supported.`);
+                continue;
             }
-        } else {
-            setFileError(`File type .${ext || "unknown"} is not supported.`);
-            event.target.value = "";
-            return;
+
+            if (typeof allowedMb !== "number" || allowedMb <= 0) {
+                setFileError(`File type .${ext || "unknown"} is not supported.`);
+                continue;
+            }
+
+            const maxBytes = allowedMb * BYTES_PER_MB;
+
+            if (file.size > maxBytes) {
+                setFileError(`File "${fileName}" is too large. Maximum size for .${extKey} files is ${allowedMb} MB.`);
+                continue;
+            }
+
+            // File is valid - add it
+            validFiles.push(file);
+
+            const fileType = file.type || "";
+            if (fileType.startsWith("image/")) {
+                validPreviews.push({
+                    url: URL.createObjectURL(file),
+                    name: fileName,
+                    isImage: true
+                });
+            } else {
+                validPreviews.push({
+                    url: null,
+                    name: fileName,
+                    isImage: false
+                });
+            }
         }
 
-        if (typeof allowedMb !== "number" || allowedMb <= 0) {
-            setFileError(`File type .${ext || "unknown"} is not supported.`);
-            event.target.value = "";
-            return;
+        if (validFiles.length > 0) {
+            // Clear any previous error once we have at least one valid file
+            setFileError(null);
+            const newSelectedFiles = [...selectedFiles, ...validFiles];
+            const newFilePreviews = [...filePreviews, ...validPreviews];
+
+            setSelectedFiles(newSelectedFiles);
+            setFilePreviews(newFilePreviews);
+            setAttachment(newSelectedFiles);
         }
 
-        const maxBytes = allowedMb * BYTES_PER_MB;
-
-        if (file.size > maxBytes) {
-            setFileError(`File "${fileName}" is too large. Maximum size for .${extKey} files is ${allowedMb} MB.`);
-            event.target.value = "";
-            return;
-        }
-
-        setFileError(null);
-        setSelectedFile(file);
-        setAttachment(file);
-
-        const fileType = file.type || "";
-        if (fileType.startsWith("image/")) {
-            setFilePreview(URL.createObjectURL(file));
-        } else {
-            setFilePreview(fileName);
-        }
+        // Reset file input so same file can be selected again
+        event.target.value = "";
     };
 
-    const handleRemoveFile = () => {
-        setSelectedFile(null);
-        setFilePreview(null);
-        setFileError(null);
+    const handleRemoveFile = (indexToRemove) => {
+        // Revoke object URL if it's an image preview
+        if (filePreviews[indexToRemove]?.url) {
+            URL.revokeObjectURL(filePreviews[indexToRemove].url);
+        }
+
+        const newSelectedFiles = selectedFiles.filter((_, index) => index !== indexToRemove);
+        const newFilePreviews = filePreviews.filter((_, index) => index !== indexToRemove);
+
+        setSelectedFiles(newSelectedFiles);
+        setFilePreviews(newFilePreviews);
+
         if (setAttachment) {
-            setAttachment(null);
+            setAttachment(newSelectedFiles.length > 0 ? newSelectedFiles : null);
+        }
+
+        // If we're now under the limit, clear any lingering "max files" error
+        const updatedCount = newSelectedFiles.length;
+        if (updatedCount < maxFiles && fileError && fileError.startsWith("Maximum number of files")) {
+            setFileError(null);
         }
     };
 
     const handleSend = () => {
-        if (value.trim() || selectedFile) {
-            onSend(value.trim(), selectedFile);
-            setSelectedFile(null);
-            setFilePreview(null);
+        if (value.trim() || selectedFiles.length > 0) {
+            onSend(value.trim(), selectedFiles.length > 0 ? selectedFiles : null);
+            // Revoke all object URLs
+            filePreviews.forEach(preview => {
+                if (preview.url) {
+                    URL.revokeObjectURL(preview.url);
+                }
+            });
+            setSelectedFiles([]);
+            setFilePreviews([]);
+            setFileError(null);
         }
     };
 
     return (
         <div className="message-input-container" style={customStyles}>
-            {filePreview && (
-                <div className="file-preview-container">
-                    <button
-                        className="remove-file-button"
-                        onClick={handleRemoveFile}
-                        data-testid="file-remove-button"
-                    >
-                        <X size={10} />
-                    </button>
-                    {selectedFile.type.startsWith("image/") ? (
-                        <img src={filePreview} alt="Preview" className="file-preview-image" />
-                    ) : (
-                        <div className="file-preview">
-                            {isTextBasedFile(selectedFile.name) ? (
-                                <FileText size={15} />
+            {filePreviews.length > 0 && (
+                <div className="file-previews-wrapper" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '10px' }}>
+                    {filePreviews.map((preview, index) => (
+                        <div key={index} className="file-preview-container" style={{ position: 'relative' }}>
+                            <button
+                                className="remove-file-button"
+                                onClick={() => handleRemoveFile(index)}
+                                data-testid={`file-remove-button-${index}`}
+                            >
+                                <X size={10} />
+                            </button>
+                            {preview.isImage ? (
+                                <img src={preview.url} alt={preview.name} className="file-preview-image" />
                             ) : (
-                                <File size={15} />
+                                <div className="file-attachment-card">
+                                    {isTextBasedFile(preview.name) ? (
+                                        <FileText size={24} className="file-attachment-icon" />
+                                    ) : (
+                                        <File size={24} className="file-attachment-icon" />
+                                    )}
+                                    <div className="file-attachment-info">
+                                        <span className="file-attachment-name">{preview.name}</span>
+                                    </div>
+                                </div>
                             )}
-                            <p className="file-name-preview">{selectedFile.name}</p>
                         </div>
-                    )}
+                    ))}
                 </div>
             )}
             <textarea
@@ -230,10 +288,14 @@ const MessageInput = ({
                     </div>
                 )}
                 <button
-                    className={`file-upload-button ${isStreaming ? 'disabled' : ''}`}
-                    onClick={() => fileInputRef.current.click()}
+                    className={`file-upload-button ${(isStreaming || isAtMaxFileLimit) ? 'disabled' : ''}`}
+                    onClick={() => {
+                        if (!isStreaming && !isAtMaxFileLimit && fileInputRef.current) {
+                            fileInputRef.current.click();
+                        }
+                    }}
                     data-testid="file-upload-button"
-                    disabled={isStreaming}
+                    disabled={isStreaming || isAtMaxFileLimit}
                 >
                     <Paperclip size={20} />
                 </button>
@@ -244,12 +306,13 @@ const MessageInput = ({
                     accept={Array.isArray(accept) ? accept.join(",") : accept}
                     onChange={handleFileUpload}
                     data-testid="file-input"
+                    multiple
                 />
                 <button
                     onClick={isStreaming ? onStop : handleSend}
-                    className={`message-input-button ${(showTyping || (!value?.trim() && !isStreaming)) ? 'disabled' : ''}`}
+                    className={`message-input-button ${(showTyping || (!value?.trim() && selectedFiles.length === 0 && !isStreaming)) ? 'disabled' : ''}`}
                     data-testid="send-button"
-                    disabled={showTyping || (!value?.trim() && !isStreaming)}
+                    disabled={showTyping || (!value?.trim() && selectedFiles.length === 0 && !isStreaming)}
                 >
                     {isStreaming ? (
                         <Square size={18} />

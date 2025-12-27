@@ -90,13 +90,14 @@
 
 .file-preview {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
 }
 
 .file-preview svg {
     color: #fff;
-    margin-right: 10px;
+    margin-right: 0;
     background: #007bff;
     padding: 10px;
     border-radius: 5px;
@@ -123,6 +124,28 @@
     font-weight: 700;
     text-align: center;
     color: #000;
+    margin-top: 6px;
+    word-break: break-word;
+}
+
+/* Smaller attachment thumbnails inside the message input composer */
+.message-input-container .file-preview-container {
+    max-width: 80px;
+    width: 80px;
+    margin: 4px;
+}
+
+.message-input-container .file-preview-image {
+    max-width: 70px;
+}
+
+.message-input-container .file-attachment-card {
+    padding: 4px 6px;
+    max-width: 100px;
+}
+
+.message-input-container .file-attachment-name {
+    font-size: 11px;
 }
 
 /* File attachment card in chat messages */
