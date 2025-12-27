@@ -37,6 +37,9 @@ Keyword arguments:
 - assistant_bubble_style (dict; optional):
     Css styles to customize the assistant message bubble.
 
+- attachment_spec (dict; optional):
+    Attachment specification.
+
 - class_name (string; default ""):
     Name for the class attribute to be added to the chat container.
 
@@ -164,6 +167,7 @@ Keyword arguments:
         persistence: typing.Optional[bool] = None,
         persistence_type: typing.Optional[Literal["local", "session"]] = None,
         supported_input_file_types: typing.Optional[typing.Union[str, typing.Sequence[str]]] = None,
+        attachment_spec: typing.Optional[dict] = None,
         streaming_enabled: typing.Optional[bool] = None,
         sse_endpoint: typing.Optional[str] = None,
         show_thinking_process: typing.Optional[bool] = None,
@@ -173,9 +177,9 @@ Keyword arguments:
         load_more_messages: typing.Optional[NumberType] = None,
         **kwargs
     ):
-        self._prop_names = ['id', 'assistant_bubble_style', 'class_name', 'container_style', 'fill_height', 'fill_width', 'input_container_style', 'input_placeholder', 'input_text_style', 'load_more_messages', 'messages', 'new_message', 'persistence', 'persistence_type', 'show_thinking_process', 'sse_endpoint', 'streaming_complete', 'streaming_enabled', 'supported_input_file_types', 'theme', 'thinking_auto_collapse', 'thinking_collapse_delay', 'typing_indicator', 'user_bubble_style']
+        self._prop_names = ['id', 'assistant_bubble_style', 'attachment_spec', 'class_name', 'container_style', 'fill_height', 'fill_width', 'input_container_style', 'input_placeholder', 'input_text_style', 'load_more_messages', 'messages', 'new_message', 'persistence', 'persistence_type', 'show_thinking_process', 'sse_endpoint', 'streaming_complete', 'streaming_enabled', 'supported_input_file_types', 'theme', 'thinking_auto_collapse', 'thinking_collapse_delay', 'typing_indicator', 'user_bubble_style']
         self._valid_wildcard_attributes =            []
-        self.available_properties = ['id', 'assistant_bubble_style', 'class_name', 'container_style', 'fill_height', 'fill_width', 'input_container_style', 'input_placeholder', 'input_text_style', 'load_more_messages', 'messages', 'new_message', 'persistence', 'persistence_type', 'show_thinking_process', 'sse_endpoint', 'streaming_complete', 'streaming_enabled', 'supported_input_file_types', 'theme', 'thinking_auto_collapse', 'thinking_collapse_delay', 'typing_indicator', 'user_bubble_style']
+        self.available_properties = ['id', 'assistant_bubble_style', 'attachment_spec', 'class_name', 'container_style', 'fill_height', 'fill_width', 'input_container_style', 'input_placeholder', 'input_text_style', 'load_more_messages', 'messages', 'new_message', 'persistence', 'persistence_type', 'show_thinking_process', 'sse_endpoint', 'streaming_complete', 'streaming_enabled', 'supported_input_file_types', 'theme', 'thinking_auto_collapse', 'thinking_collapse_delay', 'typing_indicator', 'user_bubble_style']
         self.available_wildcard_properties =            []
         _explicit_args = kwargs.pop('_explicit_args')
         _locals = locals()

@@ -102,6 +102,13 @@
     border-radius: 5px;
 }
 
+.file-error-message {
+    color: #dc2626;
+    font-size: 12px;
+    margin-right: auto;
+    align-self: center;
+}
+
 .remove-file-button svg {
     color: #fff;
 }
@@ -116,6 +123,68 @@
     font-weight: 700;
     text-align: center;
     color: #000;
+}
+
+/* File attachment card in chat messages */
+.file-attachment-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    margin: 10px 0;
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    max-width: 300px;
+}
+
+.file-attachment-icon {
+    color: #007bff;
+    flex-shrink: 0;
+}
+
+.file-attachment-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.file-attachment-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: #333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-attachment-link {
+    font-size: 12px;
+    color: #007bff;
+    text-decoration: none;
+}
+
+.file-attachment-link:hover {
+    text-decoration: underline;
+}
+
+/* Dark theme file attachment support */
+.chat-container[data-theme="dark"] .file-attachment-card {
+    background: #2d2d2d;
+    border-color: #444;
+}
+
+.chat-container[data-theme="dark"] .file-attachment-name {
+    color: #e0e0e0;
+}
+
+.chat-container[data-theme="dark"] .file-attachment-icon {
+    color: #8ecbff;
+}
+
+.chat-container[data-theme="dark"] .file-attachment-link {
+    color: #8ecbff;
 }
 
 .chat-bubble {
@@ -482,4 +551,100 @@
 .chat-container[data-theme="dark"] .scroll-to-bottom-button:hover {
     background: #4b5563;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* HITL Decision Result Styles */
+.hitl-decision-result {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.hitl-decision-result.hitl-approved {
+    background-color: rgba(34, 197, 94, 0.1);
+    color: #16a34a;
+}
+
+.hitl-decision-result.hitl-denied {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #dc2626;
+}
+
+.hitl-status-icon {
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.hitl-status-text {
+    font-weight: 600;
+}
+
+.hitl-auto-tag {
+    color: #6b7280;
+    font-size: 12px;
+    font-style: italic;
+    font-weight: 400;
+}
+
+.hitl-reason {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #6b7280;
+    font-style: italic;
+}
+
+/* HITL Confirm/Cancel Buttons */
+.btn-confirm {
+    padding: 6px 16px;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    background: #22c55e;
+    color: white;
+    transition: background 0.2s;
+}
+
+.btn-confirm:hover {
+    background: #16a34a;
+}
+
+.btn-cancel {
+    padding: 6px 16px;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    background: #ef4444;
+    color: white;
+    transition: background 0.2s;
+}
+
+.btn-cancel:hover {
+    background: #dc2626;
+}
+
+/* Dark theme HITL support */
+.chat-container[data-theme="dark"] .hitl-decision-result.hitl-approved {
+    background-color: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+}
+
+.chat-container[data-theme="dark"] .hitl-decision-result.hitl-denied {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+}
+
+.chat-container[data-theme="dark"] .hitl-auto-tag {
+    color: #9ca3af;
+}
+
+.chat-container[data-theme="dark"] .hitl-reason {
+    color: #9ca3af;
 }
