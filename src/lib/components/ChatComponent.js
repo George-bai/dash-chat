@@ -1563,7 +1563,6 @@ const ChatComponent = ({
                     customStyles={inputContainerStyle}
                     inputComponentStyles={{ ...inputFieldStyle, ...inputTextStyle }}
                     placeholder={inputPlaceholder}
-                    showTyping={showTyping}
                     isStreaming={isStreaming}
                     setAttachment={setAttachment}
                     accept={accept}

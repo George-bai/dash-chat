@@ -84,7 +84,6 @@ const MessageInput = ({
     buttonLabel,
     customStyles = null,
     inputComponentStyles = null,
-    showTyping = false,
     accept,
     attachmentSpec
 }) => {
@@ -102,6 +101,9 @@ const MessageInput = ({
     // Apply max_files per message: only count files selected for the current message
     const totalExistingCount = selectedFiles.length;
     const isAtMaxFileLimit = totalExistingCount >= maxFiles;
+    const hasDraftMessage = Boolean((value || "").trim() || selectedFiles.length > 0);
+    const canSend = hasDraftMessage;
+    const canStop = Boolean(isStreaming && !hasDraftMessage);
 
     const handleFileUpload = (event) => {
         const files = Array.from(event.target.files || []);
@@ -268,14 +270,16 @@ const MessageInput = ({
                 placeholder={placeholder}
                 onChange={handleInputChange}
                 onKeyDown={(e) => {
-                    if (e.key === "Enter" && !showTyping) {
+                    if (e.key === "Enter") {
                         if (e.shiftKey) {
                             // Shift+Enter: Allow default behavior (new line)
                             return;
                         }
-                        // Enter: Send message
-                        e.preventDefault();
-                        handleSend();
+                        // Enter: Send message (supports steering while streaming)
+                        if (canSend) {
+                            e.preventDefault();
+                            handleSend();
+                        }
                     }
                 }}
                 style={inputComponentStyles}
@@ -309,12 +313,22 @@ const MessageInput = ({
                     multiple
                 />
                 <button
-                    onClick={isStreaming ? onStop : handleSend}
-                    className={`message-input-button ${(showTyping || (!value?.trim() && selectedFiles.length === 0 && !isStreaming)) ? 'disabled' : ''}`}
+                    onClick={() => {
+                        if (canSend) {
+                            handleSend();
+                            return;
+                        }
+                        if (canStop) {
+                            if (onStop) {
+                                onStop();
+                            }
+                        }
+                    }}
+                    className={`message-input-button ${(canSend || canStop) ? '' : 'disabled'}`}
                     data-testid="send-button"
-                    disabled={showTyping || (!value?.trim() && selectedFiles.length === 0 && !isStreaming)}
+                    disabled={!(canSend || canStop)}
                 >
-                    {isStreaming ? (
+                    {canStop ? (
                         <Square size={18} />
                     ) : (
                         buttonLabel ? buttonLabel : <Send size={18} />
@@ -362,10 +376,6 @@ MessageInput.propTypes = {
      * Inline styles for the input field.
     */
     inputComponentStyles: PropTypes.object,
-    /**
-     * Disable button when waiting for message.
-    */
-    showTyping: PropTypes.bool,
     /**
      * Set file attached to state.
     */
