@@ -5,11 +5,29 @@ import ChatComponent from "../../src/lib/components/ChatComponent";
 describe("ChatComponent", () => {
     global.URL.createObjectURL = jest.fn();
     const mockSetProps = jest.fn();
-    Date.now = jest.fn(() => 1741822740027);
+    const FIXED_NOW = 1741822740027;
+    Date.now = jest.fn(() => FIXED_NOW);
+    const eventSourceInstances = [];
 
     beforeAll(() => {
         window.HTMLElement.prototype.scrollIntoView = jest.fn();
         global.URL.createObjectURL = jest.fn(() => "mocked-file-url");
+        global.EventSource = jest.fn((url) => {
+            const instance = {
+                url,
+                close: jest.fn(),
+                onmessage: null,
+                onerror: null,
+                onopen: null,
+            };
+            eventSourceInstances.push(instance);
+            return instance;
+        });
+    });
+
+    beforeEach(() => {
+        mockSetProps.mockClear();
+        eventSourceInstances.length = 0;
     });
 
     const defaultProps = {
@@ -84,6 +102,53 @@ describe("ChatComponent", () => {
         });
     });
 
+    it("keeps typing indicator visible for empty content chunks and hides on first non-empty chunk", async () => {
+        const { rerender } = render(
+            <ChatComponent {...defaultProps} streaming_enabled={true} sse_endpoint={null} />
+        );
+
+        fireEvent.change(screen.getByRole("textbox"), {
+            target: { value: "show first rows" },
+        });
+        fireEvent.click(screen.getByTestId("send-button"));
+
+        await waitFor(() => {
+            expect(screen.getByTestId("typing-indicator")).toBeInTheDocument();
+        });
+
+        rerender(
+            <ChatComponent
+                {...defaultProps}
+                streaming_enabled={true}
+                sse_endpoint="/api/sse/chat?message_id=m1&user_message_id=u1"
+            />
+        );
+
+        await waitFor(() => {
+            expect(global.EventSource).toHaveBeenCalled();
+            expect(eventSourceInstances.length).toBe(1);
+        });
+
+        eventSourceInstances[0].onmessage({
+            data: JSON.stringify({ type: "stream_start", message_id: "m1", role: "assistant" }),
+        });
+        eventSourceInstances[0].onmessage({
+            data: JSON.stringify({ type: "content", message_id: "m1", chunk: "" }),
+        });
+
+        await waitFor(() => {
+            expect(screen.getByTestId("typing-indicator")).toBeInTheDocument();
+        });
+
+        eventSourceInstances[0].onmessage({
+            data: JSON.stringify({ type: "content", message_id: "m1", chunk: "Here are the first rows." }),
+        });
+
+        await waitFor(() => {
+            expect(screen.queryByTestId("typing-indicator")).not.toBeInTheDocument();
+        });
+    });
+
     it("allows the user to attach a file", async () => {
         render(<ChatComponent setProps={mockSetProps} />);
 
@@ -127,7 +192,7 @@ describe("ChatComponent", () => {
         fireEvent.click(sendButton);
 
         expect(mockSetProps).toHaveBeenCalledWith({
-            new_message: { role: "user", content: "This is a test message", id: 1741822740027 },
+            new_message: { role: "user", content: "This is a test message", id: FIXED_NOW },
         });
     });
 
@@ -172,7 +237,7 @@ describe("ChatComponent", () => {
 
     it("saves messages to localStorage when persistence is enabled", () => {
         const id = "chat-component";
-        const messages = [{ role: "user", content: "Hello!", id: 1741822740027 }];
+        const messages = [{ role: "user", content: "Hello!", id: FIXED_NOW }];
         render(<ChatComponent id={id} persistence={true} persistence_type="local" />);
         const inputField = screen.getByRole("textbox");
         const sendButton = screen.getByTestId("send-button");

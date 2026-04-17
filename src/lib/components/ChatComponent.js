@@ -123,7 +123,7 @@ const parseThinkingContent = (content, messageId = 'default') => {
     };
 };
 
-// Thinking section component
+// Progress section component
 const ThinkingSection = ({ thinking, isExpanded, onToggle, isStreaming }) => {
     const contentRef = useRef(null);
     const [height, setHeight] = useState(0);
@@ -166,7 +166,7 @@ const ThinkingSection = ({ thinking, isExpanded, onToggle, isStreaming }) => {
                     transition: 'transform 0.2s'
                 }}>▶</span>
                 <span className="thinking-label">
-                    {isStreaming ? 'Thinking...' : 'Thinking process'}
+                    {isStreaming ? 'Working...' : 'Progress details'}
                 </span>
             </button>
             <div
@@ -197,7 +197,7 @@ ThinkingSection.propTypes = {
     isStreaming: PropTypes.bool
 };
 
-// Streaming message component with think tag parsing
+// Streaming message component with progress/final-content separation
 const StreamingMessage = ({
     message,
     isStreaming,
@@ -1056,8 +1056,11 @@ const ChatComponent = ({
                 break;
 
             case 'content':
-                // Hide typing indicator when first content arrives
-                setShowTyping(false);
+                // Keep typing indicator for keep-alive empty chunks.
+                // Hide only when actual content arrives.
+                if ((data.chunk || '').length > 0) {
+                    setShowTyping(false);
+                }
                 setStreamingMessages(prev => {
                     const existingMessage = prev[data.message_id];
                     if (!existingMessage) {
@@ -1091,6 +1094,75 @@ const ChatComponent = ({
                             streamingMainContent: !inThinking
                                 ? (existingMessage.streamingMainContent || '') + chunk
                                 : existingMessage.streamingMainContent || ''
+                        }
+                    };
+                });
+                break;
+
+            case 'agent_log':
+                // Stream backend progress logs into the working/progress panel only.
+                // Keep final answer clean by not appending these to streamingContent.
+                setShowTyping(false);
+                setStreamingMessages(prev => {
+                    const existingMessage = prev[data.message_id] || {
+                        id: data.message_id,
+                        role: 'assistant',
+                        content: '',
+                        streamingContent: '',
+                        streamingThinkingContent: '',
+                        streamingMainContent: '',
+                        inThinkingMode: true,
+                        isStreaming: true,
+                        timestamp: Date.now()
+                    };
+                    const line = String(data.message || '').trim();
+                    if (!line) {
+                        return {
+                            ...prev,
+                            [data.message_id]: {
+                                ...existingMessage,
+                                inThinkingMode: true
+                            }
+                        };
+                    }
+                    return {
+                        ...prev,
+                        [data.message_id]: {
+                            ...existingMessage,
+                            inThinkingMode: true,
+                            streamingThinkingContent: `${existingMessage.streamingThinkingContent || ''}${line}\n`
+                        }
+                    };
+                });
+                break;
+
+            case 'agent_action':
+                // Append summarized tool outcomes to the working/progress panel.
+                setShowTyping(false);
+                setStreamingMessages(prev => {
+                    const existingMessage = prev[data.message_id] || {
+                        id: data.message_id,
+                        role: 'assistant',
+                        content: '',
+                        streamingContent: '',
+                        streamingThinkingContent: '',
+                        streamingMainContent: '',
+                        inThinkingMode: true,
+                        isStreaming: true,
+                        timestamp: Date.now()
+                    };
+                    const toolName = String(data.tool || 'tool').trim();
+                    const actionMsg = String(data.message || '').trim();
+                    const prefix = data.success === false ? '⚠️' : '✅';
+                    const line = actionMsg
+                        ? `${prefix} ${toolName}: ${actionMsg}`
+                        : `${prefix} ${toolName}`;
+                    return {
+                        ...prev,
+                        [data.message_id]: {
+                            ...existingMessage,
+                            inThinkingMode: true,
+                            streamingThinkingContent: `${existingMessage.streamingThinkingContent || ''}${line}\n`
                         }
                     };
                 });
@@ -1195,6 +1267,7 @@ const ChatComponent = ({
 
                 // Always set streaming to false when we receive stream_complete for any message
                 setIsStreaming(false);
+                setShowTyping(false);
 
                 // Close the SSE connection since the stream is complete
                 if (sseRef.current) {
@@ -1377,6 +1450,7 @@ const ChatComponent = ({
         });
 
         setIsStreaming(false);
+        setShowTyping(false);
     };
 
     const styleChatContainer = {};
